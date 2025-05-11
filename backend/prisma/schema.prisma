@@ -1,0 +1,141 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Defines the database connection provider and URL (read from .env)
+datasource db {
+  provider = "postgresql" // Specifies we are using PostgreSQL
+  url      = env("DATABASE_URL") // Loads the database connection string from the .env file
+}
+
+// Defines the Prisma client generator (for interacting with the DB in code)
+generator client {
+  provider = "prisma-client-js" // Generates a JavaScript/TypeScript client
+}
+
+// Enum for Playlist Types - restricts the 'type' field to these values
+enum PlaylistType {
+  Monthly
+  Yearly
+  Artist
+}
+
+// Model definition for the 'playlists' table
+model Playlist {
+  id                String       @id @default(uuid()) // Primary Key, automatically generated UUID
+  spotifyPlaylistId String       @unique // Spotify's ID for the playlist, must be unique
+  name              String // Name of the playlist (e.g., "Trap Tally - May 2025")
+  type              PlaylistType // Type of playlist, using the Enum defined above
+  description       String? // Optional description for the playlist
+  coverImageUrl     String // URL for the playlist cover image
+  spotifyUrl        String // URL link to the playlist on Spotify
+  associatedYear    Int? // Optional year associated (for Monthly/Yearly)
+  associatedMonth   Int? // Optional month associated (for Monthly)
+
+  // Relation Fields
+  associatedArtistId String?      @unique // Optional foreign key for 'Artist' type playlists, MUST be unique for 1-to-1
+  associatedArtist   Artist?      @relation("ArtistBestOfPlaylist", fields: [associatedArtistId], references: [id]) // Defines the relationship to the Artist model
+  songs             PlaylistSong[] // One-to-many relationship with the PlaylistSong join table
+
+  // Timestamps managed by Prisma
+  createdAt DateTime @default(now()) // Timestamp when the record was created
+  updatedAt DateTime @updatedAt // Timestamp when the record was last updated
+
+  // Index to optimize lookups by type
+  @@index([type])
+}
+
+// Model definition for the 'artists' table
+model Artist {
+  id                        String  @id @default(uuid()) // Primary Key, automatically generated UUID
+  spotifyArtistId           String  @unique // Spotify's ID for the artist, must be unique
+  name                      String // Name of the artist
+  spotifyUrl                String // URL link to the artist on Spotify
+  monthlyFeatureCount       Int     @default(0) // Calculated count of features in monthly playlists
+  yearlyFeatureCount        Int     @default(0) // Calculated count of features in yearly playlists
+  bestOfPlaylistSongCount Int     @default(0) // Calculated count of songs in their 'Best Of' playlist
+
+  // Relation Fields
+  songs            SongArtist[] // One-to-many relationship with the SongArtist join table
+  bestOfPlaylist   Playlist?    @relation("ArtistBestOfPlaylist") // One-to-one relationship back to their 'Best Of' Playlist
+
+  // Timestamps managed by Prisma
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Index to optimize lookups by Spotify ID
+  @@index([spotifyArtistId])
+}
+
+// Model definition for the 'songs' table
+model Song {
+  id              String       @id @default(uuid()) // Primary Key, automatically generated UUID
+  spotifyTrackId  String       @unique // Spotify's ID for the track, must be unique
+  title           String // Title of the song
+  coverImageUrl   String // URL for the album cover image
+  spotifyUrl      String // URL link to the track on Spotify
+  releaseYear     Int // Year the song was released
+  releaseMonth    Int? // Optional month the song was released (might need manual input)
+
+  // Relation Fields
+  playlists PlaylistSong[] // One-to-many relationship with the PlaylistSong join table
+  artists   SongArtist[] // One-to-many relationship with the SongArtist join table
+
+  // Timestamps managed by Prisma
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  // Index to optimize lookups by Spotify ID
+  @@index([spotifyTrackId])
+}
+
+// Join table for the many-to-many relationship between Playlists and Songs
+model PlaylistSong {
+  playlistId        String // Foreign key referencing Playlist.id
+  songId            String // Foreign key referencing Song.id
+  orderInPlaylist Int // Order of the song within the specific playlist
+
+  // Relation Fields (defining the connections back to Playlist and Song)
+  playlist          Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade) // If a Playlist is deleted, remove entries from this table
+  song              Song     @relation(fields: [songId], references: [id], onDelete: Cascade) // If a Song is deleted, remove entries from this table
+
+  // Timestamps managed by Prisma
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Composite primary key to ensure a song appears only once per playlist
+  @@id([playlistId, songId])
+  // Index for efficient lookup by song
+  @@index([songId])
+}
+
+// Join table for the many-to-many relationship between Songs and Artists
+model SongArtist {
+  songId   String // Foreign key referencing Song.id
+  artistId String // Foreign key referencing Artist.id
+
+  // Relation Fields (defining the connections back to Song and Artist)
+  song     Song   @relation(fields: [songId], references: [id], onDelete: Cascade) // If a Song is deleted, remove entries from this table
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade) // If an Artist is deleted, remove entries from this table
+
+  // Timestamps managed by Prisma
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Composite primary key to ensure an artist is linked only once per song
+  @@id([songId, artistId])
+  // Index for efficient lookup by artist
+  @@index([artistId])
+}
+
+// Model for storing the curator's Spotify API tokens securely
+model CuratorToken {
+  id           String    @id @default(uuid()) // Primary key
+  curatorId    String    @unique @default("TRAP_TALLY_CURATOR") // A fixed ID for the single curator
+  accessToken  String    // Spotify Access Token - Should be encrypted in a real app
+  refreshToken String    // Spotify Refresh Token - Should be encrypted in a real app
+  expiresAt    DateTime  // Timestamp when the access token expires
+  scope        String?   // Space-separated list of granted scopes
+  tokenType    String?   // Type of token, e.g., "Bearer"
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}

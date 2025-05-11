@@ -1,0 +1,32 @@
+
+import React from "react";
+
+interface TimeSelectorProps {
+  options: string[];
+  activeOption: string;
+  onOptionChange: (option: string) => void;
+}
+
+export const TimeSelector: React.FC<TimeSelectorProps> = ({
+  options,
+  activeOption,
+  onOptionChange,
+}) => {
+  return (
+    <div className="flex gap-2 px-12 py-4 overflow-x-auto">
+      {options.map((option) => (
+        <button
+          key={option}
+          className={`flex h-10 items-center justify-center px-6 py-2 rounded-full text-sm font-medium tracking-[0.1px] ${
+            activeOption === option
+              ? "bg-[rgba(203,203,203,1)] text-black"
+              : "bg-transparent text-white hover:bg-white/10 border border-white/10"
+          }`}
+          onClick={() => onOptionChange(option)}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+};

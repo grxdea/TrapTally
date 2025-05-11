@@ -1,0 +1,32 @@
+
+import React from "react";
+
+interface YearSelectorProps {
+  years: number[];
+  activeYear: number;
+  onYearChange: (year: number) => void;
+}
+
+export const YearSelector: React.FC<YearSelectorProps> = ({
+  years,
+  activeYear,
+  onYearChange,
+}) => {
+  return (
+    <div className="flex gap-2 px-12 py-4 overflow-x-auto">
+      {years.map((year) => (
+        <button
+          key={year}
+          className={`flex h-10 items-center justify-center px-6 py-2 rounded-full text-sm font-medium tracking-[0.1px] ${
+            activeYear === year
+              ? "bg-[rgba(203,203,203,1)] text-black"
+              : "bg-transparent text-white hover:bg-white/10 border border-white/10"
+          }`}
+          onClick={() => onYearChange(year)}
+        >
+          {year}
+        </button>
+      ))}
+    </div>
+  );
+};

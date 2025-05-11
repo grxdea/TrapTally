@@ -1,0 +1,86 @@
+
+import React from "react";
+import { Link, useLocation } from "react-router-dom";
+import { useSpotify } from "@/context/SpotifyContext";
+
+export const Header: React.FC = () => {
+  const location = useLocation();
+  const { isAuthenticated, login, logout, user } = useSpotify();
+  
+  return (
+    <header className="bg-[rgba(6,7,8,1)] flex w-full items-center justify-between px-12 py-6 font-outfit">
+      <div className="flex items-center">
+        <Link to="/" className="flex items-center">
+          <img
+            src="https://cdn.builder.io/api/v1/image/assets/TEMP/f935d11d9bdfb030c47907b8d9e223f50ffe06f6?placeholderIfAbsent=true"
+            alt="Trap Tally Logo"
+            className="aspect-[6.58] object-contain w-[105px]"
+          />
+        </Link>
+      </div>
+      
+      <nav className="flex gap-8 text-sm text-white font-normal max-md:hidden">
+        <Link
+          to="/artists"
+          className={`px-2 py-1 rounded-lg ${
+            location.pathname === "/" || location.pathname === "/artists" || location.pathname.startsWith("/artists/")
+              ? "text-white font-medium"
+              : "text-white/70"
+          }`}
+        >
+          Artists
+        </Link>
+        <Link
+          to="/monthly-playlists"
+          className={`px-2 py-1 rounded-lg ${
+            location.pathname === "/monthly-playlists"
+              ? "text-white font-medium"
+              : "text-white/70"
+          }`}
+        >
+          Monthly Playlists
+        </Link>
+        <Link
+          to="/yearly-playlists"
+          className={`px-2 py-1 rounded-lg ${
+            location.pathname === "/yearly-playlists"
+              ? "text-white font-medium"
+              : "text-white/70"
+          }`}
+        >
+          Yearly Playlists
+        </Link>
+      </nav>
+      
+      <div>
+        {isAuthenticated ? (
+          <div className="flex items-center gap-3">
+            {user && (
+              <div className="text-sm text-white/70 mr-2 hidden md:block">
+                {user.display_name}
+              </div>
+            )}
+            <button 
+              onClick={logout}
+              className="border flex items-center gap-2 text-sm text-[#1ED760] font-medium rounded-[100px] border-[rgba(30,215,96,1)] px-6 py-2"
+            >
+              <span>Logout</span>
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={login}
+            className="border flex items-center gap-2 text-sm text-[#1ED760] font-medium rounded-[100px] border-[rgba(30,215,96,1)] px-6 py-2"
+          >
+            <img
+              src="https://cdn.builder.io/api/v1/image/assets/TEMP/88cdaa33471f983b8c24dc03ece7e7853c78f2cd?placeholderIfAbsent=true"
+              alt="Login icon"
+              className="w-[18px] h-[18px]"
+            />
+            <span>Login</span>
+          </button>
+        )}
+      </div>
+    </header>
+  );
+};
