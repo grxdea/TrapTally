@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tailwind Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'spotify-green': '#1DB954',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <div class="max-w-md mx-auto bg-gray-800 rounded-xl p-6 shadow-lg">
+        <h1 class="text-2xl font-bold mb-4">Tailwind CSS Test</h1>
+        
+        <p class="mb-4">Testing basic Tailwind classes:</p>
+        
+        <div class="flex space-x-4 mb-6">
+            <div class="bg-red-500 text-white p-4 rounded">Red Box</div>
+            <div class="bg-blue-500 text-white p-4 rounded">Blue Box</div>
+            <div class="bg-green-500 text-white p-4 rounded">Green Box</div>
+        </div>
+        
+        <p class="mb-4">Testing custom Spotify green:</p>
+        
+        <div class="bg-spotify-green text-black p-4 rounded-full h-10 flex items-center justify-center w-40">
+            Spotify Green
+        </div>
+        
+        <div class="mt-6">
+            <button class="bg-spotify-green text-black px-6 py-2 rounded-full h-10 flex items-center justify-center">
+                Test Button
+            </button>
+        </div>
+    </div>
+</body>
+</html>

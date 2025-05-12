@@ -13,7 +13,7 @@ export default {
       colors: {
         background: '#000000',
         spotify: {
-          green: '#1ED760',
+          green: '#1DB954', // Updated from #1ED760
           black: '#191414',
         },
       },
@@ -21,6 +21,7 @@ export default {
         primary: '#000000',
         secondary: '#121212',
         'button-hover': 'rgba(255, 255, 255, 0.1)',
+        'white-alpha-05': 'rgba(255, 255, 255, 0.05)', // Added for subtle container backgrounds
       },
       textColor: {
         primary: 'rgba(255, 255, 255, 0.9)',

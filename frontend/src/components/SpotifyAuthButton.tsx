@@ -96,10 +96,14 @@ const SpotifyAuthButton: React.FC = () => {
     console.log("Tokens cleared, user logged out.");
   };
 
+  const baseStyle = "flex h-10 items-center justify-center px-6 py-2 rounded-full text-sm font-medium tracking-[0.1px] transition-colors";
+  const loginStyle = `${baseStyle} bg-spotify-green text-black`;
+  const logoutStyle = `${baseStyle} bg-transparent text-white hover:bg-white/10 border border-white/10`;
+
   return (
     <button
       onClick={isAuthenticated ? handleLogout : handleLogin}
-      className="bg-spotify-green text-black text-sm font-medium py-1 px-4 rounded-full hover:bg-green-500 transition-colors"
+      className={isAuthenticated ? logoutStyle : loginStyle}
     >
       {isAuthenticated ? 'Logout' : 'Login'}
     </button>
