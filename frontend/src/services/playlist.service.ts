@@ -29,6 +29,7 @@ export interface ApiPlaylistSong {
 
 // Get the API base URL from environment variables
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+console.log('Using API_BASE_URL:', API_BASE_URL);
 
 /**
  * Fetches playlists by their type from the backend API.
