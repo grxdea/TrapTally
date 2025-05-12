@@ -2,19 +2,22 @@
 import React, { useState, useEffect } from 'react';
 import { getPlaylistsByType, getSongsByPlaylistId, ApiPlaylistSummary, ApiPlaylistSong } from '../services/playlist.service';
 import TrackRow from '../components/TrackRow'; // Import shared TrackRow
-import TrackTableHeader from '../components/TrackTableHeader'; // Import shared TrackTableHeader
+import FilterButtons from '../components/FilterButtons'; // Import FilterButtons component
 
 /**
  * YearlyPlaylistsPage Component
- * Displays yearly playlists with album covers and songs by year
+ * Displays yearly playlists with songs by year
  */
 const YearlyPlaylistsPage: React.FC = () => {
   // State for playlists data
   const [playlists, setPlaylists] = useState<ApiPlaylistSummary[]>([]);
   const [playlistSongs, setPlaylistSongs] = useState<ApiPlaylistSong[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // State for year selection
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+  const [activeYear, setActiveYear] = useState<number | null>(null);
   
   // Fetch playlists on component mount
   useEffect(() => {
@@ -24,17 +27,35 @@ const YearlyPlaylistsPage: React.FC = () => {
       
       try {
         const data = await getPlaylistsByType('YEARLY');
+        console.log('YearlyPlaylistsPage: Playlists received:', data);
         setPlaylists(data);
         
-        // Set initial selected year to the most recent one
-        if (data.length > 0) {
-          const years = [...new Set(data.map(playlist => playlist.year || 0))]
-            .filter(year => year !== 0)
-            .sort((a, b) => b - a);
-            
-          if (years.length > 0) {
-            setSelectedYear(years[0]);
-          }
+        console.log('Raw playlists data:', data.map(p => p.name));
+        
+        // Extract years from playlist names since year property is undefined
+        const extractedYears = data.map(playlist => {
+          // Try to extract year from playlist name (e.g., "Best of 2023")
+          // Using case-insensitive regex and checking for multiple patterns
+          const match = playlist.name.match(/best of (\d{4})/i) || playlist.name.match(/(\d{4})/);
+          const year = match ? parseInt(match[1], 10) : null;
+          console.log(`Extracted year from '${playlist.name}':`, year);
+          return year;
+        });
+        
+        // Filter out null values and create unique sorted list
+        const years = [...new Set(extractedYears.filter((year): year is number => year !== null))]
+          .sort((a, b) => b - a);
+        
+        console.log('YearlyPlaylistsPage: Final extracted years:', years);
+        setAvailableYears(years);
+        
+        // Set initial active selection to the latest year
+        if (years.length > 0) {
+          const latestYear = years[0]; // First year in descending sorted list
+          setActiveYear(latestYear);
+          console.log('YearlyPlaylistsPage: Initial activeYear:', latestYear);
+        } else {
+          console.log('YearlyPlaylistsPage: No years available from playlists.');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load playlists');
@@ -47,26 +68,34 @@ const YearlyPlaylistsPage: React.FC = () => {
     fetchPlaylists();
   }, []);
   
-  // Fetch songs when selected year changes
+  // Fetch songs when active year changes
   useEffect(() => {
-    if (!selectedYear) return;
+    if (!activeYear) return;
     
     const fetchSongs = async () => {
       setIsLoading(true);
-      setPlaylistSongs([]);
+      setPlaylistSongs([]); // Clear previous songs
+      console.log(`YearlyPlaylistsPage: Fetching songs for year: ${activeYear}`);
       
       try {
-        // Find the playlist ID for the selected year
-        const selectedPlaylist = playlists.find(p => p.year === selectedYear);
+        // Find the playlist ID for the selected year by matching the name pattern
+        const selectedPlaylist = playlists.find(p => {
+          // Check for pattern like "2023 Year in Review"
+          const extractedYear = extractYearFromName(p.name);
+          return extractedYear === activeYear;
+        });
+        console.log('YearlyPlaylistsPage: selectedPlaylist:', selectedPlaylist); // Log the found playlist
         
         if (selectedPlaylist) {
           const songs = await getSongsByPlaylistId(selectedPlaylist.id);
+          console.log('YearlyPlaylistsPage: Songs received for selected playlist:', songs); // Log received songs
           setPlaylistSongs(songs);
         } else {
+          console.log('YearlyPlaylistsPage: No playlist found for selected year.');
           setPlaylistSongs([]);
         }
       } catch (err) {
-        console.error('Error fetching songs for selected year:', err);
+        console.error('YearlyPlaylistsPage: Error fetching songs for selected playlist:', err);
         setPlaylistSongs([]);
       } finally {
         setIsLoading(false);
@@ -74,89 +103,78 @@ const YearlyPlaylistsPage: React.FC = () => {
     };
     
     fetchSongs();
-  }, [selectedYear, playlists]);
+  }, [activeYear, playlists]);
   
-  // Get all available years from playlists
-  const availableYears = React.useMemo(() => {
-    return [...new Set(playlists.map(playlist => playlist.year || 0))]
-      .filter(year => year !== 0)
-      .sort((a, b) => b - a);
-  }, [playlists]);
-
-  // We can find the selected playlist when needed
+  // Helper function to extract year from playlist name
+  const extractYearFromName = (playlistName: string): number | null => {
+    // Try multiple patterns with case insensitivity
+    // 1. "Best of 2023" pattern
+    // 2. Any 4-digit year anywhere in the string
+    const match = playlistName.match(/best of (\d{4})/i) || playlistName.match(/(\d{4})/);
+    if (!match) return null;
+    return parseInt(match[1], 10);
+  };
   
   return (
-    <main className="bg-[rgba(6,7,8,1)] flex flex-col overflow-hidden min-h-screen font-outfit">
-      <h1 className="text-5xl text-white font-semibold text-left px-12 py-8 max-md:text-[40px]">
-        Yearly Playlists
-      </h1>
+    <div className="container mx-auto px-6 py-8">
+      <h1 className="text-3xl font-bold mb-8 text-white">Yearly Playlists</h1>
       
-      {/* Year Selector: Horizontal tab selection */}
-      <section className="flex h-16 w-full gap-4 px-12 items-center font-outfit">
-        {availableYears.map(year => (
-          <button
-            key={year}
-            className={`flex h-10 items-center justify-center px-6 py-2 rounded-full text-sm font-medium tracking-[0.1px] ${
-              selectedYear === year
-                ? "bg-[rgba(203,203,203,1)] text-black"
-                : "bg-transparent text-white hover:bg-white/10"
-            }`}
-            onClick={() => setSelectedYear(year)}
-          >
-            {year}
-          </button>
-        ))}
-      </section>
-      
-      {/* CoverGrid: Album covers grid - with reduced size */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 px-12 mb-6 max-w-[1400px] overflow-hidden">
-        {playlists.map(playlist => (
-          <div key={playlist.id} className="aspect-square max-w-[180px] cursor-pointer group relative">
-            <img 
-              src={playlist.coverImageUrl || 'https://placehold.co/200x200/121212/FFFFFF?text=No+Cover'}
-              alt={playlist.name}
-              className="w-full h-full object-cover rounded-md shadow-lg transition-transform group-hover:scale-105 duration-200"
-              onClick={() => setSelectedYear(playlist.year || null)}
+      {isLoading && !activeYear ? (
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+        </div>
+      ) : error ? (
+        <div className="text-red-500 text-center p-8">
+          <p>{error}</p>
+        </div>
+      ) : (
+        <>
+          {/* Year Selector */}
+          {availableYears.length > 0 && (
+            <FilterButtons
+              filters={availableYears.map(String)}
+              activeFilter={activeYear ? String(activeYear) : ''}
+              onFilterChange={(yearStr) => {
+                const year = Number(yearStr);
+                setActiveYear(year);
+                console.log(`YearlyPlaylistsPage: Year changed to ${year}`);
+              }}
+              className="mb-8"
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center p-2 rounded-md">
-              <span className="text-white text-xs font-medium truncate">{playlist.name}</span>
-            </div>
+          )}
+          
+          {/* Playlist Songs */}
+          <div className="mt-8">
+            {isLoading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+              </div>
+            ) : playlistSongs.length > 0 ? (
+              <table className="track-table">
+                <thead>
+                  <tr>
+                    <th>Song</th>
+                    <th>Artist</th>
+                    <th>Album</th>
+                    <th className="text-center">Released</th>
+                    <th className="text-center">Year</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {playlistSongs.map(song => (
+                    <TrackRow key={song.id} track={song} />
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-white/60 text-center py-12">
+                No songs found for this playlist.
+              </p>
+            )}
           </div>
-        ))}
-      </section>
-      
-      {/* TrackTable: Songs table */}
-      {selectedYear && (
-        <section className="bg-[rgba(6,7,8,1)] w-full max-w-5xl px-0 md:px-4 py-4">
-          <table className="w-full min-w-[600px]"> 
-            <thead>
-              <TrackTableHeader />
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="text-center py-10">
-                    <div className="flex justify-center items-center h-32">
-                      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
-                    </div>
-                  </td>
-                </tr>
-              ) : playlistSongs.length > 0 ? (
-                playlistSongs.map(song => (
-                  <TrackRow key={song.id} track={song} />
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="text-white/60 text-center py-12">
-                    No songs found for this year.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </section>
+        </>
       )}
-    </main>
+    </div>
   );
 };
 

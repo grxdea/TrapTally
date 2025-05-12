@@ -50,12 +50,6 @@ const App: React.FC = () => {
         <AuthInitializer />
         <Header /> {/* Main navigation header */}
 
-        {/* TEST DIV START */}
-        <div className="bg-spotify-green text-black h-10 w-40 p-4 m-4">
-          Test Div
-        </div>
-        {/* TEST DIV END */}
-
         {/* Main content area where routed pages will be displayed */}
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow">
           <Routes>

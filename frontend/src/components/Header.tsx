@@ -3,11 +3,12 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { usePlaybackStore, selectSpotifyAccessToken } from '../store/playbackStore';
 import SpotifyAuthButton from './SpotifyAuthButton';
+import logoSvg from '../assets/logo.svg';
 
-// Logo component - using the original text-based logo
+// Logo component - using SVG logo at half size
 const Logo = () => (
   <Link to="/" className="flex items-center">
-    <div className="text-white tracking-widest font-bold text-xl">TRAP TALLY</div>
+    <img src={logoSvg} alt="TRAP TALLY" className="h-4" />
   </Link>
 );
 
