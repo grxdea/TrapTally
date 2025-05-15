@@ -29,4 +29,21 @@ export class SyncController {
       return { message: 'Failed to initiate sync process. Check server logs for details.' };
     }
   }
+
+  /**
+   * Endpoint to update album information for songs that are missing this data
+   * Route: POST /api/sync/update-albums
+   */
+  @Post('update-albums')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async updateAlbumInformation(): Promise<{ message: string; details?: string }> {
+    this.logger.log('Received request to update album information for songs.');
+    try {
+      const summary = await this.syncService.updateAlbumInformation();
+      return { message: 'Album information update completed successfully.', details: summary };
+    } catch (error) {
+      this.logger.error('Error during album information update:', error.message, error.stack);
+      return { message: 'Failed to update album information. Check server logs for details.' };
+    }
+  }
 }

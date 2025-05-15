@@ -7,18 +7,17 @@ import React from 'react';
  */
 const ArtistsTableHeader: React.FC = () => {
   return (
-    // Styling inspired by your TableHeader.txt and YearlyPlaylists screenshot
-    // Using Tailwind CSS classes for a dark theme table header
-    <div className="flex w-full items-center text-xs sm:text-sm text-gray-400 font-semibold uppercase tracking-wider px-4 sm:px-6 lg:px-8 py-3 border-b border-gray-700">
+    // Using tr/th elements for proper table structure while keeping the current styling
+    <tr className="text-xs sm:text-sm text-gray-400 font-semibold uppercase tracking-wider border-b border-gray-700">
       {/* Artist Name column - takes up more space */}
-      <div className="w-2/5 text-left pl-2">Artist</div>
+      <th className="text-left pl-2">Artist</th>
       {/* Monthly Features column */}
-      <div className="w-1/5 text-center">Monthly Features</div>
+      <th className="text-center !text-center">Monthly Features</th>
       {/* Yearly Features column */}
-      <div className="w-1/5 text-center">Yearly Features</div>
-      {/* Corrected Column Label: "Best Of Features" */}
-      <div className="w-1/5 text-center pr-2">Best Of Features</div>
-    </div>
+      <th className="text-center !text-center">Yearly Features</th>
+      {/* Best Of Features column */}
+      <th className="text-center !text-center">Best Of Features</th>
+    </tr>
   );
 };
 

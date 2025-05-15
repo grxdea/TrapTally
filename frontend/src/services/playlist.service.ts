@@ -58,6 +58,16 @@ export const getPlaylistsByType = async (type: 'YEARLY' | 'MONTHLY' | 'ARTIST'):
 export const getSongsByPlaylistId = async (playlistId: string): Promise<ApiPlaylistSong[]> => {
   try {
     const response = await axios.get<ApiPlaylistSong[]>(`${API_BASE_URL}/playlists/${playlistId}/songs`);
+    console.log(`API Response for playlist ${playlistId}:`, response.data);
+    if (response.data && response.data.length > 0) {
+      // Check if album property exists and what format it has
+      console.log('Album property format check:', {
+        firstSong: response.data[0],
+        hasAlbumProperty: response.data[0].hasOwnProperty('album'),
+        albumValue: response.data[0].album,
+        albumType: response.data[0].album ? typeof response.data[0].album : 'undefined'
+      });
+    }
     return response.data;
   } catch (error) {
     console.error(`Error fetching songs for playlist ${playlistId}:`, error);

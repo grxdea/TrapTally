@@ -97,6 +97,10 @@ const MonthlyPlaylistsPage: React.FC = () => {
         if (selectedPlaylist) {
           const songs = await getSongsByPlaylistId(selectedPlaylist.id);
           console.log('MonthlyPlaylistsPage: Songs received for selected playlist:', songs); // Log received songs
+          // Debug: Log detailed structure of first song to check album data
+          if (songs.length > 0) {
+            console.log('First song detailed structure:', JSON.stringify(songs[0], null, 2));
+          }
           setPlaylistSongs(songs);
         } else {
           console.log('MonthlyPlaylistsPage: No playlist found for selected year/month.');

@@ -9,6 +9,7 @@ export interface ApiArtist {
   monthlyFeatures: number;
   yearlyFeatures: number;
   bestOfSongs: number;
+  imageUrl?: string; // Artist profile image URL
 }
 
 // Structure for the detailed artist response
@@ -27,8 +28,40 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
  */
 export const getAllArtists = async (): Promise<ApiArtist[]> => {
   try {
-    const response = await axios.get<ApiArtist[]>(`${API_BASE_URL}/artists`);
-    return response.data;
+    const response = await axios.get<any[]>(`${API_BASE_URL}/artists`);
+    
+    // Log the first raw artist object to inspect its structure
+    if (response.data && response.data.length > 0) {
+      console.log('Inspecting first raw artist object from API:', response.data[0]);
+    }
+    
+    // Map the response data to ensure consistent property names
+    const artists = response.data.map(artist => {
+      // Check for various possible image URL properties in the API response
+      const imageUrl = artist.imageUrl || 
+                      artist.profileImageUrl || 
+                      artist.image || 
+                      artist.profileImage || 
+                      artist.coverImageUrl || 
+                      artist.avatarUrl || 
+                      artist.avatar || 
+                      null;
+                      
+      // Log the found image URL for debugging
+      if (imageUrl) {
+        console.log(`Found image URL for artist ${artist.name}:`, imageUrl);
+      } else {
+        console.log(`No image URL found for artist ${artist.name}`);
+      }
+      
+      // Return a properly structured artist object
+      return {
+        ...artist,
+        imageUrl
+      };
+    });
+    
+    return artists;
   } catch (error) {
     console.error('Error fetching artists:', error);
     if (axios.isAxiosError(error)) {
@@ -46,18 +79,47 @@ export const getAllArtists = async (): Promise<ApiArtist[]> => {
  */
 export const getArtistById = async (artistId: string): Promise<ApiArtistDetail> => {
   try {
-    const response = await axios.get<ApiArtistDetail>(`${API_BASE_URL}/artists/${artistId}`);
+    const response = await axios.get<any>(`${API_BASE_URL}/artists/${artistId}`);
     
-    // Transform the response if necessary to match our expected interface
-    const artistData = response.data;
+    // Get the raw artist data from the response
+    const rawData = response.data;
     
-    // If the API returns songs instead of featuredSongs, rename the property
-    if ('songs' in artistData && !('featuredSongs' in artistData)) {
-      return {
-        ...artistData,
-        featuredSongs: (artistData as any).songs || []
-      };
+    // Check for various possible image URL properties in the API response
+    const imageUrl = rawData.imageUrl || 
+                   rawData.profileImageUrl || 
+                   rawData.image || 
+                   rawData.profileImage || 
+                   rawData.coverImageUrl || 
+                   rawData.avatarUrl || 
+                   rawData.avatar || 
+                   null;
+    
+    // Log the found image URL for debugging
+    if (imageUrl) {
+      console.log(`Found image URL for artist ${rawData.name}:`, imageUrl);
+    } else {
+      console.log(`No image URL found for artist ${rawData.name}`);
     }
+    
+    // Determine featured songs correctly based on API response
+    let featuredSongs: ApiPlaylistSong[] = [];
+    if ('featuredSongs' in rawData) {
+      featuredSongs = rawData.featuredSongs || [];
+    } else if ('songs' in rawData) {
+      featuredSongs = rawData.songs || [];
+    }
+    
+    // Create a properly structured artist detail object
+    const artistData: ApiArtistDetail = {
+      id: rawData.id,
+      name: rawData.name,
+      monthlyFeatures: rawData.monthlyFeatures || 0,
+      yearlyFeatures: rawData.yearlyFeatures || 0,
+      bestOfSongs: rawData.bestOfSongs || 0,
+      imageUrl: imageUrl,
+      bio: rawData.bio || '',
+      featuredSongs: featuredSongs
+    };
     
     return artistData;
   } catch (error) {

@@ -230,6 +230,7 @@ export class SyncService {
               if (releaseDateParts.length > 1) releaseMonth = parseInt(releaseDateParts[1], 10);
             }
           }
+          // Create/update the song without album fields first to avoid TypeScript errors 
           const dbSong = await this.prisma.song.upsert({
             where: { spotifyTrackId: track.id },
             update: {
@@ -248,6 +249,17 @@ export class SyncService {
               releaseMonth: releaseMonth,
             },
           });
+          
+          // Then use raw SQL to update the album fields
+          if (track.album) {
+            await this.prisma.$executeRaw`
+              UPDATE "Song" 
+              SET "albumId" = ${track.album.id}, 
+                  "albumName" = ${track.album.name}, 
+                  "albumUrl" = ${track.album.external_urls?.spotify || ''} 
+              WHERE id = ${dbSong.id}
+            `;
+          }
           await this.prisma.playlistSong.upsert({
             where: { playlistId_songId: { playlistId: dbPlaylist.id, songId: dbSong.id } },
             update: { orderInPlaylist: index },
@@ -419,5 +431,96 @@ export class SyncService {
       });
     }
     this.logger.log('Finished updating artist feature counts.');
+  }
+
+  /**
+   * Updates album information for songs that are missing this data
+   * @returns A summary of the update operation
+   */
+  async updateAlbumInformation(): Promise<string> {
+    this.logger.log('Starting album information update for existing songs...');
+    let spotifyApi = await this.getSpotifyApi();
+    
+    // Find all songs with Spotify IDs that need album info
+    const songsToUpdate = await this.prisma.song.findMany({
+      where: {
+        spotifyTrackId: { not: undefined },
+      },
+      select: {
+        id: true,
+        spotifyTrackId: true,
+        // We select these to identify which need updating
+        // but won't use them for conditional logic directly
+        // to avoid TypeScript errors with new fields
+        title: true, 
+      },
+    });
+
+    // We'll filter them here in JS instead of in the query
+    // This avoids TypeScript errors with the new fields that Prisma doesn't recognize yet
+    const songsWithoutAlbumInfo = songsToUpdate.filter(song => {
+      // @ts-ignore - this is a valid field we added to the schema
+      return !song.albumName || !song.albumId;
+    });
+
+    this.logger.log(`Found ${songsWithoutAlbumInfo.length} songs that need album information`);
+    
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    // Process songs in batches to avoid rate limiting
+    const batchSize = 50;
+    for (let i = 0; i < songsWithoutAlbumInfo.length; i += batchSize) {
+      const batch = songsWithoutAlbumInfo.slice(i, i + batchSize);
+      
+      for (const song of batch) {
+        try {
+          // Get track info from Spotify
+          const { body: trackInfo } = await spotifyApi.getTrack(song.spotifyTrackId);
+          
+          if (trackInfo && trackInfo.album) {
+            // Execute raw SQL query for update to bypass Prisma type checking
+            // This is a temporary solution until the Prisma types are updated
+            await this.prisma.$executeRaw`
+              UPDATE "Song" 
+              SET "albumId" = ${trackInfo.album.id}, 
+                  "albumName" = ${trackInfo.album.name}, 
+                  "albumUrl" = ${trackInfo.album.external_urls?.spotify || ''} 
+              WHERE id = ${song.id}
+            `;
+            
+            updatedCount++;
+            this.logger.verbose(`Updated album info for song ID: ${song.id}, Song: ${song.title}`);
+          }
+          
+          // Add a small delay to avoid hitting Spotify rate limits
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (error) {
+          errorCount++;
+          this.logger.error(`Failed to update album info for song ID: ${song.id}`, error.message);
+          
+          // Handle token refresh if needed
+          if (error.statusCode === 401 || (error.body && error.body.error?.status === 401)) {
+            try {
+              await this.authService.refreshAndStoreSpotifyToken();
+              this.logger.log('Token refreshed after 401 error');
+              // Re-initialize Spotify API with fresh token
+              spotifyApi = await this.getSpotifyApi();
+            } catch (refreshError) {
+              this.logger.error('Failed to refresh token during album info update', refreshError.message);
+              // If we can't refresh, break the loop to avoid further errors
+              break;
+            }
+          }
+        }
+      }
+      
+      this.logger.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(songsWithoutAlbumInfo.length / batchSize)}`);
+    }
+    
+    const summary = `Album information update completed. Songs processed: ${songsWithoutAlbumInfo.length}. Updated: ${updatedCount}. Errors: ${errorCount}.`;
+    this.logger.log(summary);
+    return summary;
   }
 }

@@ -38,7 +38,7 @@
                 ${
                   activeFilter === filter
                     ? 'bg-gray-300 text-black focus:ring-gray-400' // Active button style
-                    : 'bg-gray-700/60 text-gray-300 hover:bg-gray-600/80 hover:text-white border border-gray-600 focus:ring-gray-500' // Inactive button style
+                    : 'bg-transparent text-white hover:bg-white/10 border border-white/10 focus:ring-gray-500' // Inactive button style - transparent with white border
                 }
               `}
               onClick={() => onFilterChange(filter)} // Call the onFilterChange handler when clicked

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { usePlaybackStore, selectSpotifyAccessToken, selectDeviceId } from '../store/playbackStore';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { usePlaybackStore, selectSpotifyAccessToken, selectDeviceId, selectIsPlaying, selectCurrentTrackId } from '../store/playbackStore';
 import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaVolumeMute, FaVolumeDown } from 'react-icons/fa';
 
 interface TrackInfo {
@@ -26,6 +26,8 @@ interface SpotifyPlaybackState {
 const SpotifyPlayerControls: React.FC = () => {
   const accessToken = usePlaybackStore(selectSpotifyAccessToken);
   const deviceId = usePlaybackStore(selectDeviceId);
+  const isPlaying = usePlaybackStore(selectIsPlaying);
+  const currentTrackId = usePlaybackStore(selectCurrentTrackId);
   const [trackInfo, setTrackInfo] = useState<TrackInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,21 +103,54 @@ const SpotifyPlayerControls: React.FC = () => {
         throw new Error(errorMessage);
       }
       
-      if (response.status === 204 || method === 'PUT' || method === 'DELETE' || (method === 'POST' && !endpoint.includes('https://api.spotify.com/v1/me/player'))) {
-        return; 
+      // Handle successful 204 No Content responses explicitly
+      if (response.status === 204) {
+        return; // Successfully processed, no content to return or parse
       }
 
-      const data = await response.json();
-
-      if (endpoint === 'https://api.spotify.com/v1/me/player' && data && data.item) {
-        setTrackInfo({
-          name: data.item.name,
-          artists: data.item.artists.map((artist: any) => artist.name),
-          albumArt: data.item.album.images[0]?.url || '',
-          isPlaying: data.is_playing,
-        });
+      // For other successful 2xx responses, check content type
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          const data = await response.json();
+          // Specific handling for /v1/me/player endpoint to update trackInfo state
+          if (endpoint === 'https://api.spotify.com/v1/me/player' && data && data.item) {
+            setTrackInfo({
+              name: data.item.name,
+              artists: data.item.artists.map((artist: any) => artist.name),
+              albumArt: data.item.album.images[0]?.url || '',
+              isPlaying: data.is_playing,
+            });
+          }
+          return data as T;
+        } catch (jsonParseError: any) {
+          let responseTextSnippet = "(could not read response text after JSON parse failure)";
+          try {
+             const errorText = await response.text(); // Attempt to get text for diagnostics
+             responseTextSnippet = errorText.substring(0, 200);
+             console.error(`Spotify API response (Content-Type: application/json) was not valid JSON. Snippet: ${responseTextSnippet}`, jsonParseError);
+          } catch (textReadError) {
+            console.error(`Spotify API response (Content-Type: application/json) was not valid JSON, and also failed to read as text.`, jsonParseError, textReadError);
+          }
+          throw new Error(`Failed to parse JSON response from ${endpoint}. API returned Content-Type: application/json, but body was not valid JSON. Snippet: ${responseTextSnippet}`);
+        }
+      } else {
+        // Successful 2xx response, but status is not 204 and Content-Type is not JSON.
+        // Check if this is an expected non-JSON response type (e.g., some PUT/POST operations based on original logic).
+        if (method === 'PUT' || method === 'DELETE' || (method === 'POST' && !endpoint.includes('https://api.spotify.com/v1/me/player'))) {
+            console.warn(`Spotify API request to ${endpoint} (Method: ${method}) succeeded with status ${response.status} but returned non-JSON content-type: ${contentType}. Assuming no content expected.`);
+            return; // No content expected for this type of request.
+        }
+        // Otherwise, it's an unexpected non-JSON response.
+        let responseBodyForError = "(unknown non-JSON content)";
+        try {
+            responseBodyForError = (await response.text()).substring(0,200);
+        } catch (e) {
+            console.warn("Could not read response body for non-JSON 2xx error reporting", e);
+        }
+        console.error(`Spotify API request to ${endpoint} succeeded (status ${response.status}) but returned non-JSON content-type: ${contentType}. Body snippet: ${responseBodyForError}`);
+        throw new Error(`Spotify API request to ${endpoint} returned unexpected content-type: ${contentType || 'unknown'}. Expected JSON for a ${response.status} response with method ${method}.`);
       }
-      return data as T;
     } catch (err) {
       console.error('Error making API request:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -223,28 +258,107 @@ const SpotifyPlayerControls: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const fetchCurrentVolumeAndPlayback = async () => {
-      if (accessToken && deviceId) {
-        try {
-          const playbackState = await spotifyApiRequest<SpotifyPlaybackState>('https://api.spotify.com/v1/me/player', 'GET');
-          if (playbackState && playbackState.device && typeof playbackState.device.volume_percent === 'number') {
-            setVolume(playbackState.device.volume_percent);
-            if (playbackState.device.volume_percent === 0) {
-                setIsMuted(true);
-            }
-          } else {
-            console.warn('Could not fetch initial volume, using default or last known.');
+  // Track the last time we refreshed playback data
+  const lastRefreshTimeRef = useRef<number>(0);
+  const isRefreshingRef = useRef<boolean>(false);
+  
+  // Function to fetch current playback state
+  const fetchCurrentPlaybackState = async (force = false) => {
+    // Don't allow multiple concurrent refreshes
+    if (isRefreshingRef.current && !force) {
+      return null;
+    }
+    
+    // Check if we've refreshed recently (within last 2 seconds)
+    const now = Date.now();
+    if (!force && now - lastRefreshTimeRef.current < 2000) {
+      // Skip this refresh as it's too soon after the last one
+      return null;
+    }
+    
+    if (accessToken && deviceId) {
+      try {
+        isRefreshingRef.current = true;
+        lastRefreshTimeRef.current = now;
+        
+        const playbackState = await spotifyApiRequest<SpotifyPlaybackState>('https://api.spotify.com/v1/me/player', 'GET');
+        
+        // Update volume if available
+        if (playbackState && playbackState.device && typeof playbackState.device.volume_percent === 'number') {
+          setVolume(playbackState.device.volume_percent);
+          if (playbackState.device.volume_percent === 0) {
+            setIsMuted(true);
           }
-        } catch (err) {
-          console.error('Failed to fetch initial playback state for volume:', err);
         }
+        
+        // If we got a response but trackInfo wasn't set from the spotifyApiRequest function,
+        // set it manually here
+        if (playbackState && playbackState.item && (!trackInfo || trackInfo.name !== playbackState.item.name)) {
+          setTrackInfo({
+            name: playbackState.item.name,
+            artists: playbackState.item.artists.map(artist => artist.name),
+            albumArt: playbackState.item.album.images[0]?.url || '',
+            isPlaying: playbackState.is_playing || false,
+          });
+        }
+        
+        return playbackState;
+      } catch (err) {
+        console.error('Failed to fetch playback state:', err);
+        return null;
+      } finally {
+        isRefreshingRef.current = false;
       }
-    };
+    }
+    return null;
+  };
+  
+  // Load initial playback state when component mounts or device ID changes
+  useEffect(() => {
     if (deviceId) {
-        fetchCurrentVolumeAndPlayback(); 
+      fetchCurrentPlaybackState();
     }
   }, [accessToken, deviceId]);
+  
+  // Use a ref to track the previous track ID to avoid redundant updates
+  const prevTrackIdRef = useRef<string | null>(null);
+  const prevIsPlayingRef = useRef<boolean | null>(null);
+  
+  // Listen for changes to playback state in the store
+  useEffect(() => {
+    // Only update if there's a meaningful change
+    if (currentTrackId === prevTrackIdRef.current && isPlaying === prevIsPlayingRef.current) {
+      return; // No change, skip update
+    }
+    
+    // Update refs to current values
+    prevTrackIdRef.current = currentTrackId;
+    prevIsPlayingRef.current = isPlaying;
+    
+    // When isPlaying or currentTrackId changes in the store, refresh the track info
+    const refreshPlaybackInfo = async () => {
+      // Short delay to allow Spotify API to sync
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Fetch current playback state - force refresh if track ID changed
+      const playbackState = await fetchCurrentPlaybackState(currentTrackId !== null);
+      
+      // If we couldn't get playback state but we know a track is playing,
+      // update the UI based on the store values
+      if (!playbackState && currentTrackId && isPlaying) {
+        setTrackInfo(prevInfo => ({
+          ...prevInfo || {
+            name: 'Unknown Track',
+            artists: ['Unknown Artist'],
+            albumArt: '',
+          },
+          isPlaying: isPlaying
+        }));
+      }
+    };
+    
+    refreshPlaybackInfo();
+  }, [isPlaying, currentTrackId, fetchCurrentPlaybackState, trackInfo]);
 
   const VolumeIcon = () => {
     if (isMuted || volume === 0) return <FaVolumeMute />;

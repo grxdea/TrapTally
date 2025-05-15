@@ -75,6 +75,11 @@ model Song {
   spotifyUrl      String // URL link to the track on Spotify
   releaseYear     Int // Year the song was released
   releaseMonth    Int? // Optional month the song was released (might need manual input)
+  
+  // Album information
+  albumId         String? // Optional Spotify album ID
+  albumName       String? // Optional album name
+  albumUrl        String? // Optional URL link to the album on Spotify
 
   // Relation Fields
   playlists PlaylistSong[] // One-to-many relationship with the PlaylistSong join table

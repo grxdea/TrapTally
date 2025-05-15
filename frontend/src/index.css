@@ -105,8 +105,16 @@ body {
   border-spacing: 0;
 }
 
-.track-table th {
+.track-table th:first-child {
   text-align: left;
+  padding: 12px 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.track-table th:not(:first-child) {
   padding: 12px 16px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.7);
@@ -127,16 +135,22 @@ body {
   font-size: 14px;
 }
 
+.track-row td:nth-child(2),
+.track-row td:nth-child(3),
+.track-row td:nth-child(4) {
+  text-align: center;
+}
+
 /* Song cell with album art */
 .song-cell {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px; /* Increased gap for larger images */
 }
 
 .album-art-small {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+  height: 64px;
   object-fit: cover;
-  border-radius: 2px;
+  border-radius: 4px; /* Slightly larger border radius for larger images */
 }

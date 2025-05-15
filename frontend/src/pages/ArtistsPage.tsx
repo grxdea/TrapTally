@@ -99,10 +99,14 @@ const ArtistsPage: React.FC = () => {
       </div>
 
       <div className="bg-[rgba(12,14,15,0.5)] rounded-lg shadow-xl overflow-hidden">
-        <ArtistsTableHeader />
-        <div className="flex flex-col">
-          {content} {/* Render the conditional content */}
-        </div>
+        <table className="track-table">
+          <thead>
+            <ArtistsTableHeader />
+          </thead>
+          <tbody>
+            {content} {/* Render the conditional content */}
+          </tbody>
+        </table>
       </div>
     </div>
   );
