@@ -52,26 +52,33 @@ const App: React.FC = () => {
 
         {/* Main content area where routed pages will be displayed */}
         <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow">
-          <Routes>
-            <Route path="/" element={<Navigate to="/artists" replace />} />
-            <Route path="/artists" element={<ArtistsPage />} />
-            <Route path="/artists/:artistId" element={<ArtistDetailPage />} />
-            <Route path="/playlists/monthly" element={<MonthlyPlaylistsPage />} />
-            <Route path="/playlists/yearly" element={<YearlyPlaylistsPage />} />
-            <Route path="/playlists/best-of" element={<BestOfPlaylistsPage />} />
+          {/* Add padding at the bottom to prevent content from being hidden behind fixed player */}
+          <div className={`${isAuthenticated ? 'pb-24' : ''}`}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/artists" replace />} />
+              <Route path="/artists" element={<ArtistsPage />} />
+              <Route path="/artists/:artistId" element={<ArtistDetailPage />} />
+              <Route path="/playlists/monthly" element={<MonthlyPlaylistsPage />} />
+              <Route path="/playlists/yearly" element={<YearlyPlaylistsPage />} />
+              <Route path="/playlists/best-of" element={<BestOfPlaylistsPage />} />
 
-            {/* Spotify Auth Callback Route - Use the AuthCallback component */}
-            <Route path="/callback" element={<AuthCallback />} />
-            {/* Auth diagnostic and error pages */}
-            <Route path="/auth-diagnostic" element={<AuthDiagnostic />} />
-            <Route path="/auth-error" element={<AuthErrorPage />} />
+              {/* Spotify Auth Callback Route - Use the AuthCallback component */}
+              <Route path="/callback" element={<AuthCallback />} />
+              {/* Auth diagnostic and error pages */}
+              <Route path="/auth-diagnostic" element={<AuthDiagnostic />} />
+              <Route path="/auth-error" element={<AuthErrorPage />} />
 
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </div>
         </main>
 
-        {/* Conditionally render SpotifyPlayer if authenticated */}
-        {isAuthenticated && <SpotifyPlayer />}
+        {/* Conditionally render SpotifyPlayer if authenticated in a fixed position container */}
+        {isAuthenticated && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-[rgba(16,17,18,0.95)] backdrop-blur-lg border-t border-white/10 shadow-lg">
+            <SpotifyPlayer />
+          </div>
+        )}
       </div>
     </BrowserRouter>
   );

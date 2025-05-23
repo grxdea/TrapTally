@@ -45,13 +45,15 @@ export const getAllArtists = async (): Promise<ApiArtist[]> => {
                       artist.coverImageUrl || 
                       artist.avatarUrl || 
                       artist.avatar || 
-                      null;
+                      `https://placehold.co/300x300/121212/FFFFFF?text=${encodeURIComponent(artist.name || 'Artist')}`;
                       
-      // Log the found image URL for debugging
-      if (imageUrl) {
-        console.log(`Found image URL for artist ${artist.name}:`, imageUrl);
-      } else {
-        console.log(`No image URL found for artist ${artist.name}`);
+      // Only log in development environment to reduce console clutter
+      if (import.meta.env.DEV) {
+        if (imageUrl && !imageUrl.includes('placehold.co')) {
+          console.debug(`Found image URL for artist ${artist.name}:`, imageUrl);
+        } else if (imageUrl.includes('placehold.co')) {
+          console.debug(`Using placeholder image for artist ${artist.name}`);
+        }
       }
       
       // Return a properly structured artist object

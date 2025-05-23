@@ -210,15 +210,23 @@ const MonthlyPlaylistsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {playlistSongs.map(song => (
-                    <TrackRow key={song.id} track={song} />
-                  ))}
+                  {playlistSongs.length > 0 ? (
+                    playlistSongs.map(song => (
+                      <TrackRow key={song.id} track={song} />
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="text-white/60 text-center py-12">
+                        No songs found for this playlist.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             ) : (
-              <p className="text-white/60 text-center py-12">
-                No songs found for this playlist.
-              </p>
+              <div className="text-white/60 text-center py-12">
+                No playlists found for this month.
+              </div>
             )}
           </div>
         </>

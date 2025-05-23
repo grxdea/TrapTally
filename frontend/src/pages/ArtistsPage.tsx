@@ -64,22 +64,44 @@ const ArtistsPage: React.FC = () => {
     setDisplayedArtists(filtered);
   }, [activeFilter, allArtists]); // Re-run this effect if activeFilter or allArtists change
 
-  // Conditional rendering based on loading and error states
-  let content;
-  if (isLoading) {
-    content = <p className="text-gray-400 text-center py-10">Loading artists...</p>;
-  } else if (error) {
-    content = <p className="text-red-500 text-center py-10">Error: {error}</p>;
-  } else if (displayedArtists.length === 0) {
-    // More specific message if a filter results in no artists
-    content = (
-      <p className="text-gray-400 text-center py-10">
-        {activeFilter === 'All Artists' ? 'No artists to display yet. (Database might be empty or sync needed)' : `No artists match the filter: "${activeFilter}"`}
-      </p>
-    );
-  } else {
-    // Map over the 'displayedArtists' state
-    content = displayedArtists.map((artist) => (
+  // We need to render different content based on the application state,
+  // but ensure we always have valid table structure
+  const renderTableContent = () => {
+    if (isLoading) {
+      return (
+        <tr>
+          <td colSpan={5} className="text-gray-400 text-center py-10">
+            Loading artists...
+          </td>
+        </tr>
+      );
+    } 
+    
+    if (error) {
+      return (
+        <tr>
+          <td colSpan={5} className="text-red-500 text-center py-10">
+            Error: {error}
+          </td>
+        </tr>
+      );
+    } 
+    
+    if (displayedArtists.length === 0) {
+      // More specific message if a filter results in no artists
+      return (
+        <tr>
+          <td colSpan={5} className="text-gray-400 text-center py-10">
+            {activeFilter === 'All Artists' 
+              ? 'No artists to display yet. (Database might be empty or sync needed)' 
+              : `No artists match the filter: "${activeFilter}"`}
+          </td>
+        </tr>
+      );
+    }
+    
+    // If we have artists to display, map them to table rows
+    return displayedArtists.map((artist) => (
       <ArtistTableRow key={artist.id} artist={artist} />
     ));
   }
@@ -104,7 +126,7 @@ const ArtistsPage: React.FC = () => {
             <ArtistsTableHeader />
           </thead>
           <tbody>
-            {content} {/* Render the conditional content */}
+            {renderTableContent()} {/* Render the table content with proper structure */}
           </tbody>
         </table>
       </div>

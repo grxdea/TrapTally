@@ -15,309 +15,262 @@ const SpotifyPlayer: React.FC = () => {
   const [player, setPlayer] = useState<any>(null);
   const [showDebugInfo, setShowDebugInfo] = useState(false);
   const [isPremiumRequired, setIsPremiumRequired] = useState(false);
-  
-  // Use refs to enforce initialization lifecycle without causing re-renders
   const hasAttemptedInitRef = useRef(false);
   const sdkReadyCallbackSetRef = useRef(false);
+  const lastAttemptTimeRef = useRef<number>(0);
 
-  // Check if the token is expired
-  const isTokenExpired = useCallback(() => {
-    const tokens = usePlaybackStore.getState().spotifyUserTokens;
-    if (!tokens || !tokens.receivedAt || !tokens.expiresIn) return true;
-    
-    const expiresAtMs = tokens.receivedAt + (tokens.expiresIn * 1000);
-    // Add 5-minute buffer to prevent edge cases
-    return Date.now() > (expiresAtMs - (5 * 60 * 1000));
-  }, []);
-
-  // Reset the initialization state - useful for retry
-  const resetPlayerInitialization = useCallback(() => {
-    console.log('SpotifyPlayer: Resetting player initialization state');
-    hasAttemptedInitRef.current = false;
-    
-    if (player) {
-      console.log('SpotifyPlayer: Disconnecting existing player before reset');
-      player.disconnect();
-      setPlayer(null);
-      setDeviceId(null);
-      setSpotifyPlayerReady(false);
-    }
-  }, [player, setDeviceId, setSpotifyPlayerReady]);
-
-  // Initialize the player - defined outside of effects but not dependent on state that changes frequently
   const initializePlayer = useCallback(() => {
-    // Safety check - only initialize once
-    if (hasAttemptedInitRef.current || player) {
-      console.log('SpotifyPlayer: Initialization already attempted or player exists.');
+    console.log('SpotifyPlayer: Attempting initializePlayer...');
+    console.log(`SpotifyPlayer: initializePlayer - accessToken: ${accessToken ? 'present' : 'absent'}, window.Spotify: ${window.Spotify ? 'present' : 'absent'}`);
+
+    if (player) {
+      console.log('SpotifyPlayer: initializePlayer - Player already initialized. Bailing.');
       return;
     }
-
+    if (hasAttemptedInitRef.current && Date.now() - lastAttemptTimeRef.current < 5000) {
+      console.log('SpotifyPlayer: initializePlayer - Debounced (called within 5s of last attempt). Bailing.');
+      return;
+    }
     if (!accessToken || !window.Spotify) {
-      console.log('SpotifyPlayer: Access token or Spotify SDK not available yet.');
+      console.error('SpotifyPlayer: initializePlayer - Missing accessToken or window.Spotify. Bailing.');
       return;
     }
 
-    // Mark that we've attempted initialization
+    console.log('SpotifyPlayer: initializePlayer - Proceeding with SDK setup.');
     hasAttemptedInitRef.current = true;
-    console.log('SpotifyPlayer: Initializing player...');
+    lastAttemptTimeRef.current = Date.now();
 
     const spotifyPlayer = new window.Spotify.Player({
       name: 'Trap Tally Web Player',
-      getOAuthToken: (cb: (token: string) => void) => {
-        // The SDK expects the token directly, ensure accessToken is not null
-        if (accessToken) {
-            console.log('SpotifyPlayer: Providing token to Spotify SDK');
-            cb(accessToken);
-        } else {
-            console.error("SpotifyPlayer: accessToken is null in getOAuthToken. This shouldn't happen.");
+      getOAuthToken: cb => {
+        console.log('SpotifyPlayer: getOAuthToken called by SDK.');
+        const currentTokenFromStore = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+        if (!currentTokenFromStore) {
+          console.error('SpotifyPlayer: getOAuthToken - No access token found in store for SDK!');
+          return;
         }
+        console.log(`SpotifyPlayer: getOAuthToken - Providing token: ${currentTokenFromStore.substring(0,5)}...`);
+        cb(currentTokenFromStore);
       },
       volume: 0.5,
     });
 
-    // Error handling
+    spotifyPlayer.addListener('ready', async ({ device_id }: { device_id: string }) => {
+      console.log('SpotifyPlayer: SDK Event - Ready with Device ID', device_id);
+      setDeviceId(device_id);
+      setSpotifyPlayerReady(true);
+      try {
+        const currentToken = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+        if (!currentToken) {
+          console.error('SpotifyPlayer: Cannot transfer playback, no token available.');
+          return;
+        }
+        await fetch('https://api.spotify.com/v1/me/player', {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${currentToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ device_ids: [device_id], play: false })
+        });
+        console.log('SpotifyPlayer: Transferred playback to SDK device');
+      } catch (err) {
+        console.error('SpotifyPlayer: Failed to transfer playback', err);
+      }
+      setPlayer(spotifyPlayer);
+    });
+
+    spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+      console.log('SpotifyPlayer: SDK Event - Device ID has gone offline', device_id);
+      setSpotifyPlayerReady(false);
+      setDeviceId(null);
+    });
+
     spotifyPlayer.addListener('initialization_error', ({ message }: { message: string }) => {
-      console.error('SpotifyPlayer: Failed to initialize -', message);
-      hasAttemptedInitRef.current = false; // Allow retry on initialization error
+      console.error('SpotifyPlayer: SDK Event - Failed to initialize -', message);
+      hasAttemptedInitRef.current = false;
     });
     
     spotifyPlayer.addListener('authentication_error', ({ message }: { message: string }) => {
-      console.error('SpotifyPlayer: Failed to authenticate -', message);
-      // We might need to get a new token
-      hasAttemptedInitRef.current = false; // Allow retry after auth error
+      console.error('SpotifyPlayer: SDK Event - Failed to authenticate -', message);
+      hasAttemptedInitRef.current = false;
       
-      // Check if the error is related to not having a Premium account
-      if (message.toLowerCase().includes('premium') || message.includes('401')) {
+      if (message.toLowerCase().includes('premium')) {
         console.log('SpotifyPlayer: Premium account required for Web Playback SDK');
         setIsPremiumRequired(true);
+      } else {
+        console.log('SpotifyPlayer: Authentication error, attempting to refresh auth state.');
+        import('../utils/authUtils')
+          .then(({ refreshAuthState }) => refreshAuthState())
+          .catch(err => console.error('SpotifyPlayer: Failed to refresh auth:', err));
       }
     });
     
     spotifyPlayer.addListener('account_error', ({ message }: { message: string }) => {
-      console.error('SpotifyPlayer: Failed to validate Spotify account -', message);
-      // This usually means the user needs to have a premium account
+      console.error('SpotifyPlayer: SDK Event - Failed to validate Spotify account -', message);
       setIsPremiumRequired(true);
     });
     
     spotifyPlayer.addListener('playback_error', ({ message }: { message: string }) => {
-      console.error('SpotifyPlayer: Playback error -', message);
-      
-      // Check if the error is related to not having a Premium account
+      console.error('SpotifyPlayer: SDK Event - Playback error -', message);
       if (message.toLowerCase().includes('premium')) {
         setIsPremiumRequired(true);
       }
     });
 
-    // Playback status updates
     spotifyPlayer.addListener('player_state_changed', (state: any) => {
       if (!state) {
-        console.warn('SpotifyPlayer: Received null state from player_state_changed');
+        console.warn('SpotifyPlayer: SDK Event - Received null state from player_state_changed');
         return;
       }
-      console.log('SpotifyPlayer: Player state changed');
+      console.log('SpotifyPlayer: SDK Event - Player state changed');
       setPlaybackSdkState(state);
     });
 
-    // Ready
-    spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
-      console.log('SpotifyPlayer: Ready with Device ID', device_id);
-      setDeviceId(device_id);
-      setSpotifyPlayerReady(true);
-      setPlayer(spotifyPlayer);
-    });
-
-    // Not Ready
-    spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
-      console.log('SpotifyPlayer: Device ID has gone offline', device_id);
-      setSpotifyPlayerReady(false);
-      setDeviceId(null);
-    });
-
-    // Connect to the player!
-    console.log('SpotifyPlayer: Attempting to connect to Spotify...');
+    console.log('SpotifyPlayer: Calling spotifyPlayer.connect()...');
     spotifyPlayer.connect()
-      .then((success: boolean) => {
-        if (success) {
-          console.log('SpotifyPlayer: Successfully connected to Spotify!');
-        } else {
-          console.error('SpotifyPlayer: Failed to connect to Spotify - Please check your Spotify Premium status');
-          console.log('SpotifyPlayer: A Spotify Premium account is required for Web Playback');
+      .then(success => {
+        if (!success) {
+          console.error('SpotifyPlayer: Connect call returned false—Premium required or invalid token/setup');
           setIsPremiumRequired(true);
-          hasAttemptedInitRef.current = false; // Allow retry on connection failure
+          hasAttemptedInitRef.current = false;
+        } else {
+          console.log('SpotifyPlayer: Connect call successful.');
         }
       })
-      .catch((error: any) => {
-        console.error('SpotifyPlayer: Error connecting to Spotify:', error);
-        
-        // Check if the error is related to Premium account
-        const errorMessage = error?.message || String(error);
-        if (errorMessage.toLowerCase().includes('premium') || errorMessage.includes('401')) {
-          console.log('SpotifyPlayer: A Spotify Premium account is required for Web Playback');
+      .catch(err => {
+        console.error('SpotifyPlayer: Error during spotifyPlayer.connect():', err);
+        if (err && typeof err.message === 'string' && err.message.toLowerCase().includes('premium')) {
           setIsPremiumRequired(true);
-        } else {
-          console.log('SpotifyPlayer: This may be due to network issues or an expired token');
         }
-        
-        hasAttemptedInitRef.current = false; // Allow retry on connection error
+        hasAttemptedInitRef.current = false;
       });
-
   }, [accessToken, player, setSpotifyPlayerReady, setDeviceId, setPlaybackSdkState]);
 
-  // Set up SDK ready callback ONCE when component mounts
   useEffect(() => {
-    // Don't set up SDK callback if it's already been done
-    if (sdkReadyCallbackSetRef.current) {
+    const currentToken = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+    console.log('SpotifyPlayer: useEffect for SDK setup running...');
+    console.log(`SpotifyPlayer: useEffect - accessToken (from hook): ${accessToken ? 'present' : 'absent'}, accessToken (direct store check): ${currentToken ? 'present' : 'absent'}, window.Spotify: ${window.Spotify ? 'present' : 'absent'}, sdkReadyCallbackSetRef: ${sdkReadyCallbackSetRef.current}`);
+
+    if (sdkReadyCallbackSetRef.current && window.Spotify && player) {
+      console.log('SpotifyPlayer: useEffect - SDK callback already set, Spotify ready, and player exists. Assuming initialized or in progress. Returning.');
       return;
     }
-    
-    // Mark that we've set up the callback
-    sdkReadyCallbackSetRef.current = true;
-    
-    // If SDK is already loaded, initialize player
-    if (window.Spotify) {
-      console.log('SpotifyPlayer: Spotify SDK already loaded at mount time.');
-      // Only initialize if we have an access token
-      if (accessToken) {
-        initializePlayer();
+
+    if (!sdkReadyCallbackSetRef.current) {
+      console.log('SpotifyPlayer: useEffect - sdkReadyCallbackSetRef is false. Setting it true and proceeding with SDK setup logic.');
+      sdkReadyCallbackSetRef.current = true;
+
+      if (window.Spotify) {
+        console.log('SpotifyPlayer: useEffect - window.Spotify is present.');
+        const tokenForInit = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+        if (tokenForInit) {
+          console.log('SpotifyPlayer: useEffect - accessToken is present (checked again), calling initializePlayer.');
+          initializePlayer();
+        } else {
+          console.warn('SpotifyPlayer: useEffect - window.Spotify present, but no accessToken (checked again). Player not initialized yet.');
+        }
+      } else {
+        console.log('SpotifyPlayer: useEffect - window.Spotify is NOT present. Setting onSpotifyWebPlaybackSDKReady callback.');
+        window.onSpotifyWebPlaybackSDKReady = () => {
+          console.log('SpotifyPlayer: window.onSpotifyWebPlaybackSDKReady (assigned by SpotifyPlayer.tsx useEffect) fired.');
+          const tokenAtSdkReady = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+          console.log(`SpotifyPlayer: SDKReadyCallback - accessToken (at SDK ready): ${tokenAtSdkReady ? 'present' : 'absent'}`);
+          if (tokenAtSdkReady) {
+            console.log('SpotifyPlayer: SDKReadyCallback - accessToken present, calling initializePlayer.');
+            initializePlayer();
+          } else {
+            console.warn('SpotifyPlayer: SDKReadyCallback - no accessToken when SDK became ready. Player not initialized.');
+          }
+        };
       }
     } else {
-      // SDK not loaded yet, set up callback for when it loads
-      console.log('SpotifyPlayer: Setting up onSpotifyWebPlaybackSDKReady callback.');
-      window.onSpotifyWebPlaybackSDKReady = () => {
-        console.log('SpotifyPlayer: SDK now ready via callback.');
-        // Only initialize if we have an access token
-        if (accessToken) {
-          initializePlayer();
-        }
-      };
+      console.log('SpotifyPlayer: useEffect - sdkReadyCallbackSetRef was true, but player not fully initialized. Checking if re-init is needed.');
+      const tokenForReInit = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
+      if (window.Spotify && tokenForReInit && !player) {
+        console.log('SpotifyPlayer: useEffect - Attempting re-initialization as player is missing but conditions seem met.');
+        initializePlayer();
+      }
     }
 
-    // Cleanup
     return () => {
-      // Disconnect player if it exists
+      console.log('SpotifyPlayer: useEffect cleanup. Disconnecting player if exists.');
       if (player) {
-        console.log('SpotifyPlayer: Disconnecting player on unmount.');
         player.disconnect();
-        setPlayer(null);
-        setDeviceId(null);
-        setSpotifyPlayerReady(false);
+        console.log('SpotifyPlayer: Player disconnected during cleanup.');
       }
-      
-      // Clean up SDK ready callback
-      window.onSpotifyWebPlaybackSDKReady = () => {};
     };
-    // We only want this to run once on mount, and once on unmount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [accessToken, initializePlayer, player]);
 
-  // Handle changes to access token
   useEffect(() => {
-    // Only attempt initialization if:
-    // 1. We have an access token
-    // 2. We haven't attempted initialization yet
-    // 3. The Spotify SDK is loaded
-    // 4. We don't already have a player
-    if (accessToken && !hasAttemptedInitRef.current && window.Spotify && !player) {
-      // Check if token is expired before attempting to initialize
-      if (isTokenExpired()) {
-        console.log('SpotifyPlayer: Token is expired, need to refresh token');
-        // Reset player state to allow for re-authentication
-        resetPlayerInitialization();
-        // You might want to redirect to login or implement a token refresh here
-        return;
-      }
-      console.log('SpotifyPlayer: Access token valid, initializing player.');
-      initializePlayer();
+    if (!accessToken) return;
+    
+    if (accessToken === 'backend-managed-token') {
+      console.log('SpotifyPlayer: Detected placeholder token, attempting to refresh auth');
+      import('../utils/authUtils')
+        .then(({ refreshAuthState }) => refreshAuthState())
+        .catch(err => console.error('SpotifyPlayer: Failed to refresh auth for placeholder token:', err));
     }
-  }, [accessToken, player, initializePlayer, isTokenExpired, resetPlayerInitialization]);
+  }, [accessToken]);
 
   return (
-    <div className="bg-black/20 backdrop-blur-md rounded-xl overflow-hidden border border-white/10 mb-8">
-      {/* Player Status Area */}
-      <div className="p-6 flex justify-between items-center">
-        <h2 className="text-xl font-medium text-white">Spotify Player</h2>
-        <button 
-          onClick={() => setShowDebugInfo(!showDebugInfo)}
-          className="text-xs text-white/60 hover:text-white border border-white/20 rounded-full px-3 py-1 transition-colors"
-        >
-          {showDebugInfo ? 'Hide Debug' : 'Show Debug'}
-        </button>
-      </div>
+    <div className="container mx-auto">
+      {isPremiumRequired && (
+        <div className="p-4 my-4 bg-red-900/30 text-white rounded-md">
+          <h3 className="font-medium text-lg">Spotify Premium Required</h3>
+          <p className="mt-2">
+            The Spotify Web Playback SDK requires a Spotify Premium subscription.
+            Please upgrade your Spotify account to use the player.
+          </p>
+        </div>
+      )}
+      
+      {!accessToken && (
+        <div className="p-4 my-4 bg-gray-800 text-white rounded-md">
+          <p>Please log in with Spotify to use the player.</p>
+        </div>
+      )}
       
       {showDebugInfo && (
-        <div className="mx-6 mb-6 text-xs text-white/70 bg-white/5 p-4 rounded-lg">
-          <p>Access Token: {accessToken ? 'Present' : 'Missing'}</p>
-          <p>Player Initialized: {hasAttemptedInitRef.current ? 'Yes' : 'No'}</p>
-          <p>Player Connected: {player ? 'Yes' : 'No'}</p>
+        <div className="p-4 my-4 bg-gray-800 text-white rounded-md text-sm font-mono">
+          <h3 className="font-medium mb-2">Debug Info</h3>
+          <p>Access Token: {accessToken ? `${accessToken.substring(0, 5)}...${accessToken.substring(accessToken.length - 5)}` : 'None'}</p>
+          <p>Player Initialized (component state): {player ? 'Yes' : 'No'}</p>
+          <p>Device ID (from store): {usePlaybackStore.getState().deviceId || 'None'}</p>
+          <p>Spotify Player Ready (from store): {usePlaybackStore.getState().isSpotifyPlayerReady ? 'Yes' : 'No'}</p>
+          <p>Has Attempted Init (ref): {hasAttemptedInitRef.current ? 'Yes' : 'No'}</p>
+          <p>SDK Callback Set (ref): {sdkReadyCallbackSetRef.current ? 'Yes' : 'No'}</p>
           <button 
-            onClick={resetPlayerInitialization}
-            className="mt-3 px-3 py-1 bg-spotify-green/90 text-black rounded-full hover:bg-spotify-green transition-colors text-xs"
+            onClick={() => {
+              console.log('SpotifyPlayer: Force Reinitialize button clicked.');
+              hasAttemptedInitRef.current = false;
+              lastAttemptTimeRef.current = 0;
+              if (player) {
+                console.log('SpotifyPlayer: Disconnecting existing player before force reinitialize...');
+                player.disconnect();
+                setPlayer(null);
+              }
+              setSpotifyPlayerReady(false);
+              setDeviceId(null);
+              setTimeout(() => initializePlayer(), 100);
+            }}
+            className="mt-2 px-3 py-1 bg-blue-600 rounded-md text-white text-xs"
           >
-            Reset Player
+            Force Reinitialize Player
           </button>
         </div>
       )}
       
-      {/* Player Content */}
-      <div className={`${showDebugInfo ? '' : 'px-6 pb-6'}`}>
-        {!accessToken && (
-          <div className="p-4 text-center text-white/70 text-sm">
-            <p>Please log in with Spotify to use the player.</p>
-          </div>
-        )}
-        
-        {accessToken && !player && (
-          <div className="p-4 text-center text-white/70">
-            {isPremiumRequired ? (
-              <div className="space-y-4">
-                <div className="flex justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-spotify-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <p className="text-white font-medium">Spotify Premium Required</p>
-                <p className="text-sm">The Web Playback SDK requires a Spotify Premium subscription.</p>
-                <div className="flex flex-col space-y-2">
-                  <a 
-                    href="https://www.spotify.com/premium/" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-block mx-auto px-4 py-2 bg-spotify-green text-black font-medium rounded-full hover:bg-spotify-green/90 transition-colors text-sm"
-                  >
-                    Learn About Premium
-                  </a>
-                  <button 
-                    onClick={resetPlayerInitialization}
-                    className="inline-block mx-auto px-4 py-2 bg-transparent border border-white/20 text-white/80 font-medium rounded-full hover:bg-white/10 transition-colors text-sm"
-                  >
-                    Retry Connection
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="animate-pulse flex space-x-4 justify-center items-center">
-                  <svg className="h-10 w-10 text-spotify-green animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <p>Initializing Spotify Player...</p>
-                </div>
-                {hasAttemptedInitRef.current && (
-                  <button 
-                    onClick={resetPlayerInitialization}
-                    className="mt-6 px-4 py-2 bg-spotify-green text-black font-medium rounded-full hover:bg-spotify-green/90 transition-colors text-sm"
-                  >
-                    Retry Connection
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        
-        {player && <SpotifyPlayerControls />}
+      <div className="flex justify-end mb-2">
+        <button 
+          onClick={() => setShowDebugInfo(!showDebugInfo)}
+          className="text-xs text-gray-400 hover:text-white"
+        >
+          {showDebugInfo ? 'Hide Debug' : 'Show Debug Info'}
+        </button>
       </div>
+      
+      {player && usePlaybackStore.getState().deviceId && <SpotifyPlayerControls />}
     </div>
   );
 };

@@ -21,13 +21,29 @@ const AuthCallback: React.FC = () => {
       
       // Only check for processed code if we've had a successful exchange before
       // We don't want to block legitimate retries after failed attempts
+      // Check if we're already processing this code (for race condition prevention)
+      const processingCode = window.sessionStorage.getItem('spotify_processing_code') || null;
+      const processedCode = window.sessionStorage.getItem('spotify_processed_code') || null;
       const hasSuccessfulAuth = localStorage.getItem('trap-tally-playback-storage');
-      const processedCode = window.sessionStorage.getItem('spotify_processed_code');
       
+      // Case 1: Code is currently being processed (prevent duplicate requests)
+      if (processingCode === code) {
+        console.log('Auth code is already being processed. Preventing duplicate request.');
+        // Stay on this page and let the original request finish
+        return;
+      }
+      
+      // Case 2: Code was already successfully processed
       if (hasSuccessfulAuth && processedCode === code) {
         console.log('This authorization code has already been processed and we have stored tokens, redirecting to artists.');
         window.location.href = '/artists';
         return;
+      }
+      
+      // Mark this code as being processed (set before any async operations)
+      // Make sure code isn't null before setting it
+      if (code) {
+        window.sessionStorage.setItem('spotify_processing_code', code);
       }
 
       // Handle error cases
@@ -129,6 +145,7 @@ const AuthCallback: React.FC = () => {
           
           // Clean up
           window.sessionStorage.removeItem('spotify_code_verifier');
+          window.sessionStorage.removeItem('spotify_processing_code'); // Clear the processing flag
           console.log('Authentication successful! Refreshing auth state and redirecting...');
           
           // Notify other components about successful authentication
@@ -178,6 +195,7 @@ const AuthCallback: React.FC = () => {
         
         // Clean up the code verifier to ensure a fresh start next time
         window.sessionStorage.removeItem('spotify_code_verifier');
+        window.sessionStorage.removeItem('spotify_processing_code'); // Clear the processing flag on error
         
         // Redirect with error
         window.location.href = '/?error=' + encodeURIComponent(errorMessage);
