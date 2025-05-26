@@ -9,7 +9,7 @@ export interface ApiArtist {
   monthlyFeatures: number;
   yearlyFeatures: number;
   bestOfSongs: number;
-  imageUrl?: string; // Artist profile image URL
+  artistImageUrl?: string | null; // Artist profile image URL from Spotify
 }
 
 // Structure for the detailed artist response
@@ -37,21 +37,15 @@ export const getAllArtists = async (): Promise<ApiArtist[]> => {
     
     // Map the response data to ensure consistent property names
     const artists = response.data.map(artist => {
-      // Check for various possible image URL properties in the API response
-      const imageUrl = artist.imageUrl || 
-                      artist.profileImageUrl || 
-                      artist.image || 
-                      artist.profileImage || 
-                      artist.coverImageUrl || 
-                      artist.avatarUrl || 
-                      artist.avatar || 
-                      `https://placehold.co/300x300/121212/FFFFFF?text=${encodeURIComponent(artist.name || 'Artist')}`;
+      // Use the backend-provided artistImageUrl, fallback to placeholder
+      const resolvedArtistImageUrl = artist.artistImageUrl || 
+                                 `https://placehold.co/300x300/121212/FFFFFF?text=${encodeURIComponent(artist.name || 'Artist')}`;
                       
       // Only log in development environment to reduce console clutter
       if (import.meta.env.DEV) {
-        if (imageUrl && !imageUrl.includes('placehold.co')) {
-          console.debug(`Found image URL for artist ${artist.name}:`, imageUrl);
-        } else if (imageUrl.includes('placehold.co')) {
+        if (artist.artistImageUrl) {
+          console.debug(`Using artistImageUrl for ${artist.name}:`, artist.artistImageUrl);
+        } else {
           console.debug(`Using placeholder image for artist ${artist.name}`);
         }
       }
@@ -59,7 +53,7 @@ export const getAllArtists = async (): Promise<ApiArtist[]> => {
       // Return a properly structured artist object
       return {
         ...artist,
-        imageUrl
+        artistImageUrl: resolvedArtistImageUrl // Ensure this matches the interface
       };
     });
     
@@ -86,21 +80,14 @@ export const getArtistById = async (artistId: string): Promise<ApiArtistDetail> 
     // Get the raw artist data from the response
     const rawData = response.data;
     
-    // Check for various possible image URL properties in the API response
-    const imageUrl = rawData.imageUrl || 
-                   rawData.profileImageUrl || 
-                   rawData.image || 
-                   rawData.profileImage || 
-                   rawData.coverImageUrl || 
-                   rawData.avatarUrl || 
-                   rawData.avatar || 
-                   null;
+    // Use the backend-provided artistImageUrl, fallback to null or a placeholder if desired
+    const resolvedArtistImageUrl = rawData.artistImageUrl || null; // Or use placeholder like in getAllArtists if preferred for detail view
     
     // Log the found image URL for debugging
-    if (imageUrl) {
-      console.log(`Found image URL for artist ${rawData.name}:`, imageUrl);
+    if (resolvedArtistImageUrl) {
+      console.log(`Found artistImageUrl for artist ${rawData.name}:`, resolvedArtistImageUrl);
     } else {
-      console.log(`No image URL found for artist ${rawData.name}`);
+      console.log(`No artistImageUrl found for artist ${rawData.name}`);
     }
     
     // Determine featured songs correctly based on API response
@@ -118,7 +105,7 @@ export const getArtistById = async (artistId: string): Promise<ApiArtistDetail> 
       monthlyFeatures: rawData.monthlyFeatures || 0,
       yearlyFeatures: rawData.yearlyFeatures || 0,
       bestOfSongs: rawData.bestOfSongs || 0,
-      imageUrl: imageUrl,
+      artistImageUrl: resolvedArtistImageUrl, // Ensure this matches the interface
       bio: rawData.bio || '',
       featuredSongs: featuredSongs
     };

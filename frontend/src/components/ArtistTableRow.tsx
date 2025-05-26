@@ -12,7 +12,7 @@ interface ArtistTableRowProps {
     monthlyFeatures: number;
     yearlyFeatures: number;
     bestOfSongs: number;
-    imageUrl?: string; // Optional artist image URL
+    artistImageUrl?: string | null; // Optional artist image URL from Spotify
   };
 }
 
@@ -27,7 +27,7 @@ const ArtistTableRow: React.FC<ArtistTableRowProps> = ({ artist }) => {
         <div className="song-cell"> {/* Using song-cell class for consistent styling */}
           {/* Artist image with fallback */}
           <img
-            src={artist.imageUrl || 'https://placehold.co/40x40/121212/FFFFFF?text=NA'}
+            src={artist.artistImageUrl || 'https://placehold.co/40x40/121212/FFFFFF?text=NA'}
             alt={artist.name}
             className="album-art-small" /* Using the same class as track images */
           />

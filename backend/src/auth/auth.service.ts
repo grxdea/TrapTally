@@ -209,6 +209,35 @@ export class AuthService {
   }
 
   /**
+   * Retrieves an app-level access token from Spotify using the Client Credentials Grant flow.
+   * This token is suitable for server-to-server requests that don't require user context.
+   * @returns A Spotify access token string.
+   * @throws InternalServerErrorException if token retrieval fails.
+   */
+  async getClientCredentialsToken(): Promise<string> {
+    this.logger.log('Attempting to get Spotify client credentials token...');
+    try {
+      const data = await this.spotifyApi.clientCredentialsGrant();
+      const accessToken = data.body['access_token'];
+
+      if (!accessToken) {
+        this.logger.error('Client credentials grant did not return an access token.');
+        throw new Error('No access token received from client credentials grant.');
+      }
+
+      this.logger.log(`Successfully retrieved client credentials token (expires in ${data.body['expires_in']}s).`);
+      // Note: This token is not stored in the DB as it's short-lived and for app use.
+      // It's also not set on the main this.spotifyApi instance to avoid conflict with user tokens.
+      return accessToken;
+    } catch (error) {
+      const errorMessage = error.body?.error_description || error.body?.error || error.message || 'Unknown error during client credentials grant';
+      this.logger.error(`Failed to get Spotify client credentials token: ${errorMessage}`, error.stack);
+      this.logger.error(`Error details: ${JSON.stringify(error.body, null, 2)}`);
+      throw new InternalServerErrorException(`Failed to get Spotify client credentials token: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Exchanges an authorization code and PKCE code_verifier for Spotify API tokens.
    * This is used by the frontend after a successful PKCE-based login.
    * @param code The authorization code from Spotify.

@@ -50,6 +50,7 @@ model Artist {
   spotifyArtistId           String  @unique // Spotify's ID for the artist, must be unique
   name                      String // Name of the artist
   spotifyUrl                String // URL link to the artist on Spotify
+  artistImageUrl            String? // URL for the artist's image from Spotify (optional)
   monthlyFeatureCount       Int     @default(0) // Calculated count of features in monthly playlists
   yearlyFeatureCount        Int     @default(0) // Calculated count of features in yearly playlists
   bestOfPlaylistSongCount Int     @default(0) // Calculated count of songs in their 'Best Of' playlist

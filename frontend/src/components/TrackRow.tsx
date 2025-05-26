@@ -258,6 +258,17 @@ export const TrackRow: React.FC<TrackRowProps> = ({ track }) => {
   const handlePlayClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
 
+    // Get current playback state from the store
+    const { currentTrackId: storeCurrentTrackId, isPlaying: storeIsPlaying } = usePlaybackStore.getState();
+
+    // If this track row's track is ALREADY the current track in the store,
+    // and the store says it's playing, then SpotifyPlayerControls is handling it.
+    // Don't interfere by sending another play command.
+    if (track.spotifyTrackId === storeCurrentTrackId && storeIsPlaying) {
+      console.log(`TrackRow: Play clicked for ${track.title}, but it's already the current playing track. Skipping redundant play.`);
+      return;
+    }
+
     if (isReconnecting) {
       console.log('TrackRow: Currently reconnecting, please wait...');
       return;

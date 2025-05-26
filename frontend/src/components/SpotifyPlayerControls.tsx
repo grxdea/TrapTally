@@ -178,14 +178,44 @@ const SpotifyPlayerControls: React.FC = () => {
           (contentType && contentType.includes("application/json"))) {
         try {
           const data = await response.json();
-          // Specific handling for /v1/me/player endpoint to update trackInfo state
-          if ((endpoint === SPOTIFY_PLAYER_STATE_URL || endpoint.startsWith(SPOTIFY_PLAYER_STATE_URL)) && data && data.item) {
-            setTrackInfo({
-              name: data.item.name,
-              artists: data.item.artists.map((artist: any) => artist.name),
-              albumArt: data.item.album.images[0]?.url || '',
-              isPlaying: data.is_playing,
-            });
+          // Specific handling for /v1/me/player endpoint to update trackInfo and Zustand store
+          if ((endpoint === SPOTIFY_PLAYER_STATE_URL || endpoint.startsWith(SPOTIFY_PLAYER_STATE_URL + '?')) && data) {
+            const store = usePlaybackStore.getState();
+            if (data.item) {
+              setTrackInfo({
+                name: data.item.name,
+                artists: data.item.artists.map((artist: any) => artist.name),
+                albumArt: data.item.album.images[0]?.url || '',
+                isPlaying: data.is_playing ?? false, // Ensure boolean
+              });
+              if (data.item.id && store.currentTrackId !== data.item.id) {
+                store.setCurrentTrackId(data.item.id);
+              }
+              // Optionally, update a more detailed currentTrack object in the store if it exists
+              // e.g., store.setCurrentTrackDetails({ id: data.item.id, name: data.item.name, ... });
+            } else {
+              // No item is playing, clear local trackInfo and update store
+              setTrackInfo(null);
+              if (store.currentTrackId !== null) { // Avoid unnecessary store update
+                store.setCurrentTrackId(null);
+              }
+              // e.g., store.setCurrentTrackDetails(null);
+            }
+
+            // Update isPlaying in the store based on the response
+            if (store.isPlaying !== (data.is_playing ?? false)) {
+              store.setIsPlaying(data.is_playing ?? false);
+            }
+
+            // Update volume from device info if present
+            if (data.device && typeof data.device.volume_percent === 'number') {
+              setVolume(data.device.volume_percent);
+              if (data.device.volume_percent === 0) {
+                setIsMuted(true);
+              } else if (isMuted && data.device.volume_percent > 0) {
+                setIsMuted(false); // Unmute locally if Spotify reports volume > 0
+              }
+            }
           }
           return data as T;
         } catch (jsonParseError: any) {
@@ -210,30 +240,56 @@ const SpotifyPlayerControls: React.FC = () => {
         if (method === 'GET' && (endpoint === SPOTIFY_PLAYER_STATE_URL || endpoint.startsWith(SPOTIFY_PLAYER_STATE_URL + '?'))) {
           try {
             const data = await response.json();
+            const store = usePlaybackStore.getState();
             // Update track info if available
             if (data && data.item) {
               setTrackInfo({
                 name: data.item.name,
                 artists: data.item.artists.map((artist: any) => artist.name),
                 albumArt: data.item.album.images[0]?.url || '',
-                isPlaying: data.is_playing,
+                isPlaying: data.is_playing ?? false, // Ensure boolean
               });
+              if (data.item.id && store.currentTrackId !== data.item.id) {
+                store.setCurrentTrackId(data.item.id);
+              }
+              // e.g., store.setCurrentTrackDetails({ id: data.item.id, name: data.item.name, ... });
+            } else {
+              // No item is playing, clear local trackInfo and update store
+              setTrackInfo(null);
+              if (store.currentTrackId !== null) { // Avoid unnecessary store update
+                store.setCurrentTrackId(null);
+              }
+              // e.g., store.setCurrentTrackDetails(null);
+            }
+
+            // Update isPlaying in the store based on the response
+            if (store.isPlaying !== (data.is_playing ?? false)) {
+              store.setIsPlaying(data.is_playing ?? false);
+            }
+
+            // Update volume from device info if present
+            if (data.device && typeof data.device.volume_percent === 'number') {
+              setVolume(data.device.volume_percent);
+              if (data.device.volume_percent === 0) {
+                setIsMuted(true);
+              } else if (isMuted && data.device.volume_percent > 0) {
+                setIsMuted(false); // Unmute locally if Spotify reports volume > 0
+              }
             }
             return data as T;
           } catch (jsonParseError) {
             console.error(`Attempted to parse response as JSON for ${endpoint} despite null content-type, but failed:`, jsonParseError);
           }
-        }
         
-        // Otherwise, it's an unexpected non-JSON response.
-        let responseBodyForError = "(unknown non-JSON content)";
-        try {
-            responseBodyForError = (await response.text()).substring(0,200);
-        } catch (e) {
+          // Otherwise, it's an unexpected non-JSON response.
+          try {
+            (await response.text()).substring(0,200); // Keep the read attempt if side effects are desired, or remove if not
+          } catch (e) {
             console.warn("Could not read response body for non-JSON 2xx error reporting", e);
+          }
+          console.error(`Spotify API request to ${endpoint} returned unexpected content-type: ${contentType || 'unknown'}. Expected JSON for a ${response.status} response with method ${method}.`);
+          throw new Error(`Spotify API request to ${endpoint} returned unexpected content-type: ${contentType || 'unknown'}. Expected JSON for a ${response.status} response with method ${method}.`);
         }
-        console.error(`Spotify API request to ${endpoint} returned unexpected content-type: ${contentType || 'unknown'}. Expected JSON for a ${response.status} response with method ${method}.`);
-        throw new Error(`Spotify API request to ${endpoint} returned unexpected content-type: ${contentType || 'unknown'}. Expected JSON for a ${response.status} response with method ${method}.`);
       }
     } catch (err) {
       console.error('Error making API request:', err);
@@ -295,7 +351,7 @@ const SpotifyPlayerControls: React.FC = () => {
 
   const playTrack = async (trackUri?: string): Promise<void> => {
     if (!accessToken || !deviceId) {
-      reportError('No access token or device ID available for playback.');
+      setError('No access token or device ID available for playback.');
       return;
     }
     try {
@@ -315,12 +371,12 @@ const SpotifyPlayerControls: React.FC = () => {
     } catch (err: any) {
       setLoading(false);
       if (err?.message?.includes('404')) {
-        reportError('Spotify device not found. Attempting to recover...');
+        setError('Spotify device not found. Attempting to recover...');
         setTimeout(() => window.location.reload(), 2000);
       } else if (err?.message?.toLowerCase().includes('token')) {
-        reportError('Spotify authentication error. Please log in again.');
+        setError('Spotify authentication error. Please log in again.');
       } else {
-        reportError('Error playing track: ' + (err?.message || err));
+        setError('Error playing track: ' + (err?.message || err));
       }
       console.error('Error playing track:', err);
     }
@@ -429,7 +485,7 @@ const SpotifyPlayerControls: React.FC = () => {
       const currentDeviceId = store.deviceId;
       
       if (!currentToken || !currentDeviceId) {
-        reportError('Player not connected. Please reload the page.');
+        setError('Player not connected. Please reload the page.');
         setLoading(false);
         return;
       }
@@ -466,60 +522,32 @@ const SpotifyPlayerControls: React.FC = () => {
           // Success - UI will update via 'player_state_changed' event from SpotifyPlayer.tsx
           // store.setIsPlaying(true); // Commented out: Let SDK events handle this
           
-          // Wait before fetching updated track info
-          // setTimeout(async () => { // Commented out: Let SDK events handle this
-          //   try {
-          //     console.log('Fetching current playback state after next track...');
-          //     const playerResponse = await fetch(SPOTIFY_PLAYER_STATE_URL, {
-          //       method: 'GET',
-          //       headers: {
-          //         'Authorization': `Bearer ${currentToken}`
-          //       }
-          //     });
-              
-          //     if (playerResponse.ok) {
-          //       const contentType = playerResponse.headers.get('content-type');
-          //       if (contentType && contentType.includes('application/json')) {
-          //         const playbackState = await playerResponse.json();
-                  
-          //         // Update track info if available
-          //         if (playbackState?.item) {
-          //           setTrackInfo({
-          //             name: playbackState.item.name,
-          //             artists: playbackState.item.artists.map((artist: any) => artist.name),
-          //             albumArt: playbackState.item.album.images[0]?.url || '',
-          //             isPlaying: playbackState.is_playing || true
-          //           });
-                    
-          //           // Update track ID in store
-          //           if (playbackState.item.id) {
-          //             usePlaybackStore.getState().setCurrentTrackId(playbackState.item.id);
-          //           }
-          //         }
-          //       }
-          //     } else {
-          //       console.warn(`Could not fetch current playback state: ${playerResponse.status}`);
-          //     }
-          //   } catch (refreshErr) {
-          //     console.error('Error refreshing track info after next:', refreshErr);
-          //     // Don't show error to user since track change was successful
-          //   } finally {
-          //     setLoading(false);
-          //   }
-          // }, 1000); // Increased timeout for more reliable updates
+          // Explicitly fetch the updated player state after a short delay
+          setTimeout(async () => {
+            try {
+              console.log('Fetching current playback state after next track...');
+              await spotifyApiRequest<SpotifyPlaybackState>(SPOTIFY_PLAYER_STATE_URL, 'GET');
+            } catch (refreshErr) {
+              console.error('Error refreshing track info after next:', refreshErr);
+              // Optionally, inform user if refresh fails but command was ok
+            } finally {
+              setLoading(false); // Ensure loading is set to false after the refresh attempt
+            }
+          }, 800); // Delay to allow Spotify to update its state
         } else {
           // Real error - show to user
+          setLoading(false); // Ensure loading is false if the command itself failed
           throw new Error(`Next track command failed with status ${response.status}`);
         }
       } catch (err) {
         console.error('Error sending next track command:', err);
-        reportError(`Failed to play next track: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(`Failed to play next track: ${err instanceof Error ? err.message : 'Unknown error'}`);
         setLoading(false);
       }
     } catch (err) {
       console.error('Error skipping to next track:', err);
       setError('Failed to play next track. Please try again.');
-      setLoading(false);
+      setLoading(false); // Ensure loading is false on outer catch
     }
   };
 
@@ -539,7 +567,7 @@ const SpotifyPlayerControls: React.FC = () => {
       const currentDeviceId = store.deviceId;
       
       if (!currentToken || !currentDeviceId) {
-        reportError('Player not connected. Please reload the page.');
+        setError('Player not connected. Please reload the page.');
         setLoading(false);
         return;
       }
@@ -576,60 +604,32 @@ const SpotifyPlayerControls: React.FC = () => {
           // Success - UI will update via 'player_state_changed' event from SpotifyPlayer.tsx
           // store.setIsPlaying(true); // Commented out: Let SDK events handle this
 
-          // Wait before fetching updated track info
-          // setTimeout(async () => { // Commented out: Let SDK events handle this
-          //   try {
-          //     console.log('Fetching current playback state after previous track...');
-          //     const playerResponse = await fetch(SPOTIFY_PLAYER_STATE_URL, {
-          //       method: 'GET',
-          //       headers: {
-          //         'Authorization': `Bearer ${currentToken}`
-          //       }
-          //     });
-              
-          //     if (playerResponse.ok) {
-          //       const contentType = playerResponse.headers.get('content-type');
-          //       if (contentType && contentType.includes('application/json')) {
-          //         const playbackState = await playerResponse.json();
-                  
-          //         // Update track info if available
-          //         if (playbackState?.item) {
-          //           setTrackInfo({
-          //             name: playbackState.item.name,
-          //             artists: playbackState.item.artists.map((artist: any) => artist.name),
-          //             albumArt: playbackState.item.album.images[0]?.url || '',
-          //             isPlaying: playbackState.is_playing || true
-          //           });
-                    
-          //           // Update track ID in store
-          //           if (playbackState.item.id) {
-          //             usePlaybackStore.getState().setCurrentTrackId(playbackState.item.id);
-          //           }
-          //         }
-          //       }
-          //     } else {
-          //       console.warn(`Could not fetch current playback state: ${playerResponse.status}`);
-          //     }
-          //   } catch (refreshErr) {
-          //     console.error('Error refreshing track info after previous track:', refreshErr);
-          //     // Don't show error to user since track change was successful
-          //   } finally {
-          //     setLoading(false);
-          //   }
-          // }, 1000); // Increased timeout for more reliable updates
+          // Explicitly fetch the updated player state after a short delay
+          setTimeout(async () => {
+            try {
+              console.log('Fetching current playback state after previous track...');
+              await spotifyApiRequest<SpotifyPlaybackState>(SPOTIFY_PLAYER_STATE_URL, 'GET');
+            } catch (refreshErr) {
+              console.error('Error refreshing track info after previous track:', refreshErr);
+              // Optionally, inform user if refresh fails but command was ok
+            } finally {
+              setLoading(false); // Ensure loading is set to false after the refresh attempt
+            }
+          }, 800); // Delay
         } else {
           // Real error - show to user
+          setLoading(false); // Ensure loading is false if the command itself failed
           throw new Error(`Previous track command failed with status ${response.status}`);
         }
       } catch (err) {
         console.error('Error sending previous track command:', err);
-        reportError(`Failed to play previous track: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setError(`Failed to play previous track: ${err instanceof Error ? err.message : 'Unknown error'}`);
         setLoading(false);
       }
     } catch (err) {
       console.error('Error skipping to previous track:', err);
       setError('Failed to play previous track. Please try again.');
-      setLoading(false);
+      setLoading(false); // Ensure loading is false on outer catch
     }
   };
 
@@ -667,14 +667,23 @@ const SpotifyPlayerControls: React.FC = () => {
         }
         
         // If we got a response but trackInfo wasn't set from the spotifyApiRequest function,
-        // set it manually here
-        if (playbackState && playbackState.item && (!trackInfo || trackInfo.name !== playbackState.item.name)) {
+        // set it manually here (spotifyApiRequest should now handle this, but this is a safe fallback)
+        if (playbackState && playbackState.item && 
+            (!trackInfo || 
+             trackInfo.name !== playbackState.item.name || 
+             trackInfo.isPlaying !== (playbackState.is_playing ?? false)
+            )
+           ) {
           setTrackInfo({
             name: playbackState.item.name,
             artists: playbackState.item.artists.map(artist => artist.name),
             albumArt: playbackState.item.album.images[0]?.url || '',
-            isPlaying: playbackState.is_playing || false,
+            isPlaying: playbackState.is_playing ?? false, // Ensure boolean
           });
+        } else if (playbackState && !playbackState.item && trackInfo !== null) {
+          // If no item is playing, and trackInfo is not already null, clear it locally.
+          // spotifyApiRequest should have already updated the store.
+          setTrackInfo(null);
         }
         
         return playbackState;
