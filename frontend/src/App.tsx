@@ -32,9 +32,9 @@ const AuthErrorPage: React.FC = () => {
     return <div className="p-4 text-center text-red-500">Spotify Login Error: {error}</div>;
 };
 // Optional: Simple component for auth success (if needed beyond redirect)
-// const AuthSuccessPage: React.FC = () => {
-//     return <div className="p-4 text-center text-green-500">Spotify Login Successful!</div>;
-// };
+const AuthSuccessPage: React.FC = () => {
+    return <div className="p-4 text-center text-green-500">Spotify Login Successful! You can now sync your data.</div>;
+};
 
 /**
  * Main application component responsible for routing and overall layout.
@@ -67,6 +67,7 @@ const App: React.FC = () => {
               {/* Auth diagnostic and error pages */}
               <Route path="/auth-diagnostic" element={<AuthDiagnostic />} />
               <Route path="/auth-error" element={<AuthErrorPage />} />
+              <Route path="/auth-success" element={<AuthSuccessPage />} /> {/* Added route for auth success */}
 
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
