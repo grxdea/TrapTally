@@ -22,18 +22,32 @@ export class AuthService {
   ) {
     const clientId = this.configService.get<string>('SPOTIFY_CLIENT_ID');
     const clientSecret = this.configService.get<string>('SPOTIFY_CLIENT_SECRET');
-    const apiBaseUrlFromEnv = this.configService.get<string>('API_BASE_URL', 'http://127.0.0.1:8080/api');
-    let spotifyRedirectUriHost = 'http://127.0.0.1';
-    try {
-      const parsedApiBaseUrl = new URL(apiBaseUrlFromEnv);
-      const port = parsedApiBaseUrl.port || '8080';
-      const pathname = parsedApiBaseUrl.pathname.endsWith('/') ? parsedApiBaseUrl.pathname.slice(0, -1) : parsedApiBaseUrl.pathname;
-      spotifyRedirectUriHost = `http://127.0.0.1:${port}${pathname}`;
-    } catch (e) {
-      this.logger.warn(`Could not parse API_BASE_URL "${apiBaseUrlFromEnv}". Defaulting Spotify redirect host construction.`);
-      spotifyRedirectUriHost = 'http://127.0.0.1:8080/api';
+    const apiBaseUrlFromEnv = this.configService.get<string>('API_BASE_URL');
+    const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+    let redirectUri: string;
+
+    if (nodeEnv === 'production' && apiBaseUrlFromEnv) {
+      // For production, construct the redirect URI directly from API_BASE_URL
+      // API_BASE_URL should be like 'https://your-backend.up.railway.app/api'
+      const base = apiBaseUrlFromEnv.endsWith('/') ? apiBaseUrlFromEnv.slice(0, -1) : apiBaseUrlFromEnv;
+      redirectUri = `${base}/auth/spotify/callback`;
+      this.logger.log(`Production redirectUri constructed: ${redirectUri}`);
+    } else {
+      // Fallback logic for local development or if API_BASE_URL is not set for production (which would be an error)
+      const localApiBaseUrlInput = apiBaseUrlFromEnv || 'http://127.0.0.1:8080/api'; // Default if API_BASE_URL not set for local
+      let parsedLocalBase = 'http://127.0.0.1:8080/api'; // Default base if parsing fails or for very basic local setup
+      try {
+        const parsedUrl = new URL(localApiBaseUrlInput);
+        // Construct a base URL from protocol, hostname, port (if not standard), and pathname
+        const portSegment = (parsedUrl.port && parsedUrl.port !== '80' && parsedUrl.port !== '443') ? `:${parsedUrl.port}` : '';
+        const pathSegment = parsedUrl.pathname.endsWith('/') ? parsedUrl.pathname.slice(0, -1) : parsedUrl.pathname;
+        parsedLocalBase = `${parsedUrl.protocol}//${parsedUrl.hostname}${portSegment}${pathSegment}`;
+      } catch (e) {
+        this.logger.warn(`Could not parse API_BASE_URL for local/dev: "${localApiBaseUrlInput}". Defaulting base to "${parsedLocalBase}". Error: ${e.message}`);
+      }
+      redirectUri = `${parsedLocalBase}/auth/spotify/callback`;
+      this.logger.log(`Local/Dev redirectUri constructed: ${redirectUri}`);
     }
-    const redirectUri = `${spotifyRedirectUriHost}/auth/spotify/callback`;
 
     if (!clientId || !clientSecret) {
       this.logger.error('Spotify Client ID or Client Secret is missing in .env file.');
