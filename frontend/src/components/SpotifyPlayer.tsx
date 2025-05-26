@@ -42,7 +42,7 @@ const SpotifyPlayer: React.FC = () => {
 
     const spotifyPlayer = new window.Spotify.Player({
       name: 'Trap Tally Web Player',
-      getOAuthToken: cb => {
+      getOAuthToken: (cb: (token: string) => void) => {
         console.log('SpotifyPlayer: getOAuthToken called by SDK.');
         const currentTokenFromStore = usePlaybackStore.getState().spotifyUserTokens?.accessToken;
         if (!currentTokenFromStore) {
@@ -129,7 +129,7 @@ const SpotifyPlayer: React.FC = () => {
 
     console.log('SpotifyPlayer: Calling spotifyPlayer.connect()...');
     spotifyPlayer.connect()
-      .then(success => {
+      .then((success: boolean) => {
         if (!success) {
           console.error('SpotifyPlayer: Connect call returned false—Premium required or invalid token/setup');
           setIsPremiumRequired(true);
@@ -138,7 +138,7 @@ const SpotifyPlayer: React.FC = () => {
           console.log('SpotifyPlayer: Connect call successful.');
         }
       })
-      .catch(err => {
+      .catch((err: any) => {
         console.error('SpotifyPlayer: Error during spotifyPlayer.connect():', err);
         if (err && typeof err.message === 'string' && err.message.toLowerCase().includes('premium')) {
           setIsPremiumRequired(true);

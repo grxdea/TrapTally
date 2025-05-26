@@ -24,7 +24,7 @@ const BestOfPlaylistsPage: React.FC = () => {
       setError(null);
       try {
         // Fetch playlists specifically of type 'Artist'
-        const fetchedPlaylists = await getPlaylistsByType('Artist');
+        const fetchedPlaylists = await getPlaylistsByType('ARTIST');
         setPlaylists(fetchedPlaylists);
         // Optionally select the first one by default
         // if (fetchedPlaylists.length > 0) {
