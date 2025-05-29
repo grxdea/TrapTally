@@ -37,38 +37,37 @@ export const checkAuthStatus = async (): Promise<AuthStatusResponse> => {
  */
 export const syncAuthState = async (): Promise<boolean> => {
   try {
-    const status = await checkAuthStatus();
-    
-    // Get Zustand store access
-    const { spotifyUserTokens, setSpotifyTokens, clearSpotifyTokens } = usePlaybackStore.getState();
-    
-    // Only update store if there's a mismatch
-    if (status.authenticated && !spotifyUserTokens) {
-      // Check if the backend provided a real access token
-      if (status.tokenInfo?.accessToken) {
-        console.log('Backend has valid tokens. Setting real access token for playback functionality.');
-        setSpotifyTokens({
-          accessToken: status.tokenInfo.accessToken,
-          expiresIn: 3600, // Assuming 1 hour validity, could add expiration time to the response
-        });
-      } else {
-        console.log('Backend has valid tokens but did not provide access token. Setting dummy token for authentication state only.');
-        // Fallback to dummy token if backend doesn't provide a real one
-        setSpotifyTokens({
-          accessToken: 'backend-managed-token', // Using a placeholder token
-          expiresIn: 3600, // 1 hour placeholder
-        });
+    const status = await checkAuthStatus(); // status from backend /auth/status (curator's status)
+    const { spotifyUserTokens, clearSpotifyTokens } = usePlaybackStore.getState();
+
+    if (!status.authenticated) {
+      // If the backend (curator) is not authenticated, any existing frontend user tokens
+      // might be invalid or for a session that's no longer recognized by the backend.
+      // It's safer to clear them to force a fresh user login if playback is desired.
+      if (spotifyUserTokens) {
+        console.log('Backend (curator) is not authenticated. Clearing frontend user tokens.');
+        clearSpotifyTokens();
       }
-      return true;
-    } else if (!status.authenticated && spotifyUserTokens) {
-      console.log('Backend has no valid tokens but frontend thinks user is authenticated. Clearing frontend state.');
-      clearSpotifyTokens();
-      return false;
+      return false; // Overall auth state is false
+    } else {
+      // Backend (curator) IS authenticated.
+      // We DO NOT set spotifyUserTokens here with the curator's token.
+      // spotifyUserTokens should only be set by the user's PKCE login flow (AuthCallback.tsx).
+      // If spotifyUserTokens is already set (by user login), we leave it as is.
+      // If spotifyUserTokens is not set, the user simply hasn't logged in for playback yet.
+      console.log('Backend (curator) is authenticated. Frontend user token state remains unchanged by this sync.');
+      // The return value here indicates the curator's auth status.
+      // The presence of spotifyUserTokens indicates the user's playback auth status.
+      return true; // Curator is authenticated
     }
-    
-    return status.authenticated;
   } catch (error) {
     console.error('Error syncing authentication state:', error);
+    // On error, assume curator is not authenticated and clear user tokens if present.
+    const { spotifyUserTokens, clearSpotifyTokens } = usePlaybackStore.getState();
+    if (spotifyUserTokens) {
+        console.warn('Error syncing auth state. Clearing potentially stale frontend user tokens.');
+        clearSpotifyTokens();
+    }
     return false;
   }
 };
